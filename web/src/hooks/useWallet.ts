@@ -17,6 +17,8 @@ export type WalletState = {
   usdcAllowance: bigint;
   weth: bigint;
   wethAllowance: bigint;
+  /** The balances above have been read (until then they show as zero). */
+  loaded: boolean;
   refetch: () => void;
 };
 
@@ -68,6 +70,7 @@ export function useWallet(): WalletState {
     usdcAllowance: zapRead(d?.usdc, 1),
     weth: zapRead(d?.weth, 0),
     wethAllowance: zapRead(d?.weth, 1),
+    loaded: q.isSuccess && eth.isSuccess,
     refetch: () => {
       void q.refetch();
       void eth.refetch();

@@ -16,7 +16,8 @@ const connectors = [
 export const wagmiConfig = createConfig({
   chains: [siteConfig.chain],
   connectors,
-  transports: { [siteConfig.chain.id]: http(siteConfig.rpcUrl) },
+  // One HTTP request for everything asked in the same moment (the public Base RPC rate-limits per request).
+  transports: { [siteConfig.chain.id]: http(siteConfig.rpcUrl, { batch: { wait: 16 } }) },
 });
 
 declare module "wagmi" {

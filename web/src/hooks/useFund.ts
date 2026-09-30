@@ -34,7 +34,8 @@ export type FundState = {
   seeded: boolean;
   constituents: Constituent[];
   totalSupply: bigint;
-  supplyCap: bigint;
+  /** Undefined until read: an unknown cap is not a cap of zero. */
+  supplyCap: bigint | undefined;
   mintFeeBps: number;
   navPerBlue: number | undefined;
   aum: number | undefined;
@@ -157,7 +158,7 @@ export function useFund(): FundState {
     seeded: ok<boolean>(3, false),
     constituents,
     totalSupply,
-    supplyCap: ok<bigint>(1, 0n),
+    supplyCap: ok<bigint | undefined>(1, undefined),
     mintFeeBps: Number(ok<number | bigint>(2, 0)),
     navPerBlue,
     aum: navPerBlue === undefined ? undefined : navPerBlue * (Number(totalSupply) / 1e18),

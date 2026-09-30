@@ -11,7 +11,7 @@ export function Hero({ fund }: { fund: FundState }) {
   const segs = fund.constituents.map((c) => ({ key: c.symbol, label: `${c.ticker} ${pct(c.weight)}`, weight: c.weight || 1 }));
   const a = fund.constituents.find((c) => c.symbol === active);
   const supply = Number(formatUnits(fund.totalSupply, 18));
-  const cap = Number(formatUnits(fund.supplyCap, 18));
+  const cap = fund.supplyCap === undefined ? undefined : Number(formatUnits(fund.supplyCap, 18));
   const names = new Intl.ListFormat("en", { type: "conjunction" }).format(
     fund.constituents.map((c) => c.name.replace(/( Platforms Inc\.?|\.com Inc\.?| Inc\.?| Corporation)$/, "")),
   );

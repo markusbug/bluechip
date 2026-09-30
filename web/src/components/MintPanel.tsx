@@ -12,6 +12,7 @@ import { NO_PERMIT, permitDeadline, permitDomain, signPermit, type SignedPermit 
 import { canBatch, runCalls, type Call } from "../lib/tx";
 import { AmountInput, Button, LinkButton, TokenIcon, TxStatus } from "./ui";
 import { ZapMint, type PayToken } from "./ZapMint";
+import { useDebounced } from "../hooks/useDebounced";
 
 /**
  * Approvals and permits cover exactly this mint, never more. Deposits round up by at most a few units if
@@ -30,14 +31,16 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
   const hasZap = !!d.zap && !!d.usdc;
   const [pay, setPay] = useState<PayToken | "stocks">(hasZap ? "usdc" : "stocks");
   const shares = parseAmount(amount, 18);
+  // What the RPC is asked about: the amount once typing pauses.
+  const settledShares = useDebounced(shares);
   const preview = useReadContract({
     address: d.fund,
     abi: blueFundAbi,
     functionName: "previewMint",
-    args: [shares ?? 0n],
-    query: { enabled: !!shares && shares > 0n, refetchInterval: 15_000 },
+    args: [settledShares ?? 0n],
+    query: { enabled: pay === "stocks" && !!settledShares && settledShares > 0n, refetchInterval: 15_000 },
   });
-  const need = preview.data?.[1] ?? [];
+  const need = preview.data && settledShares === shares ? preview.data[1] : [];
 
   const rows = fund.constituents.map((c, i) => {
     const req = need[i] ?? 0n;
@@ -47,7 +50,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
   const missing = rows.filter((r) => r.short > 0n);
   const toApprove = rows.map((r, i) => ({ ...r, i })).filter((r) => r.req > 0n && !r.approved);
   const fee = shares ? (shares * BigInt(fund.mintFeeBps)) / 10_000n : 0n;
-  const overCap = !!shares && fund.totalSupply + shares > fund.supplyCap;
+  const overCap = !!shares && fund.supplyCap !== undefined && fund.totalSupply + shares > fund.supplyCap;
   const value = shares && fund.navPerBlue ? (Number(shares) / 1e18) * fund.navPerBlue : undefined;
 
   const plan = useMemo(() => {
@@ -129,7 +132,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
   }
 
   const connected = !!wallet.address && wallet.onChain;
-  const disabled = !connected || busy || !shares || shares === 0n || !fund.seeded || overCap || missing.length > 0 || !preview.data;
+  const disabled = !connected || busy || !shares || shares === 0n || !fund.seeded || overCap || missing.length > 0 || need.length === 0;
 
   return (
     <div>
@@ -168,7 +171,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
       )}
 
       {pay !== "stocks" ? (
-        <ZapMint pay={pay} shares={shares} received={shares ? shares - fee : 0n} value={value} overCap={overCap} wallet={wallet} onDone={onDone} />
+        <ZapMint pay={pay} shares={shares} settledShares={settledShares} received={shares ? shares - fee : 0n} value={value} overCap={overCap} wallet={wallet} onDone={onDone} />
       ) : (
         <>
           <h3 className="mt-6 text-sm font-semibold">You deposit</h3>

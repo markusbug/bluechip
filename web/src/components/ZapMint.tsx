@@ -30,6 +30,7 @@ const zapAbi = [...mintZapAbi, ...blueFundAbi.filter((x) => x.type === "error")]
 export function ZapMint({
   pay,
   shares,
+  settledShares,
   received,
   value,
   overCap,
@@ -38,6 +39,8 @@ export function ZapMint({
 }: {
   pay: PayToken;
   shares: bigint | undefined;
+  /** `shares` once typing has paused: what gets quoted. */
+  settledShares: bigint | undefined;
   /** BLUE credited to the minter, after the fee. */
   received: bigint;
   /** NAV of the mint in USD at the feed prices. */
@@ -60,10 +63,12 @@ export function ZapMint({
     address: zap,
     abi: mintZapAbi,
     functionName: "quoteMint",
-    args: [shares ?? 0n],
-    query: { enabled: !!shares && shares > 0n && !overCap, refetchInterval: 15_000 },
+    args: [settledShares ?? 0n],
+    query: { enabled: !!settledShares && settledShares > 0n && !overCap, refetchInterval: 15_000 },
   });
-  const [usdcIn, ethIn] = quote.data?.result ?? [undefined, undefined];
+  // A quote for an amount the user has since changed is no quote.
+  const current = settledShares === shares && !quote.isPlaceholderData;
+  const [usdcIn, ethIn] = (current ? quote.data?.result : undefined) ?? [undefined, undefined];
   const cost = pay === "usdc" ? usdcIn : ethIn;
   const decimals = pay === "usdc" ? 6 : 18;
   const unit = { usdc: "USDC", eth: "ETH", weth: "WETH" }[pay];
@@ -75,7 +80,8 @@ export function ZapMint({
   const premium = costUsd !== undefined && value ? costUsd / value - 1 : undefined;
 
   const connected = !!wallet.address && wallet.onChain;
-  const short = connected && max !== undefined && balance < max;
+  // An empty wallet is short whatever the price; otherwise it takes the quote to know.
+  const short = connected && wallet.loaded && (balance === 0n || (max !== undefined && balance < max));
 
   async function mint() {
     const account = wallet.address!;
@@ -144,8 +150,9 @@ export function ZapMint({
     }
   }
 
-  const quoteFailed = quote.isError && !!shares && shares > 0n && !overCap;
-  const disabled = !connected || busy || !shares || shares === 0n || overCap || max === undefined || short;
+  const quoteFailed = current && quote.isError && !!shares && shares > 0n && !overCap;
+  const pricing = !!shares && shares > 0n && !overCap && max === undefined && !quoteFailed;
+  const disabled = !connected || busy || !shares || shares === 0n || overCap || max === undefined || short || !wallet.loaded;
 
   return (
     <div>
@@ -210,7 +217,13 @@ export function ZapMint({
             ? "Above the supply cap"
             : short
               ? `Not enough ${unit} (you have ${fmt(balance, decimals, pay === "usdc" ? 2 : 4)})`
-              : `Buy the stocks and mint with ${unit}`}
+              : !wallet.loaded
+                ? "Checking your balance…"
+                : pricing
+                  ? "Getting a price…"
+                  : quoteFailed
+                    ? "No price for this amount"
+                    : `Buy the stocks and mint with ${unit}`}
       </Button>
       <p className="mt-2 text-xs text-muted">
         One transaction buys exactly the stocks this mint deposits in their Aerodrome pools and mints your BLUE. You never pay more
