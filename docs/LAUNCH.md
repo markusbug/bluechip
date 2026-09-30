@@ -145,7 +145,14 @@ The first index change is also the first time trades touch the real stock tokens
 
 ## Testnet (Base Sepolia)
 
-The real stock tokens don't exist on Sepolia, so it runs on mocks:
+The real stock tokens don't exist on Sepolia, so it runs on mocks. The quickest check is the live test, which deploys a fresh set and runs mint, redeem, a CHIP claim, the index timelock and a rebalancing trade (the trade needs Mon–Fri 14:30–20:00 UTC):
+
+```bash
+npm run test:testnet                     # keystore account mhaas; ACCOUNT=<name> for another
+REUSE=1 npm run test:testnet             # rerun the checks on the last deployment
+```
+
+To deploy by hand instead:
 
 ```bash
 cd contracts && forge script script/DeployMocks.s.sol --rpc-url base_sepolia --account deployer --broadcast

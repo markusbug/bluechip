@@ -18,6 +18,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///         mock price feeds at the basket's snapshot prices, an oracle-priced mock DEX, and the fund,
 ///         vault and rebalancer, seeded and ready. The rebalancer only trades in the US regular
 ///         session and needs fresh prices: poke the feeds with `setPrice` to test it.
+///         SKEW_INDEX_BPS (test only) raises the last constituent's float in the rebalancer's first
+///         index, so the fund starts off target and trades can be tested without the 7-day delay.
 ///
 ///   forge script script/DeployMocks.s.sol --rpc-url localhost --broadcast \
 ///     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -56,7 +58,7 @@ contract DeployMocks is DeploymentIO {
             ISwapper(address(m.swapper)),
             m.feeds,
             _decimals(b),
-            b.floatShares,
+            _skewed(b.floatShares),
             b.multipliers,
             deployer,
             deployer,
@@ -93,6 +95,12 @@ contract DeployMocks is DeploymentIO {
         }
         m.chip = new MockChip(deployer);
         m.swapper = new MockOracleSwapper(m.tokens, m.feeds, 30);
+    }
+
+    function _skewed(uint256[] memory floatShares) private view returns (uint256[] memory) {
+        uint256 skew = vm.envOr("SKEW_INDEX_BPS", uint256(0));
+        floatShares[floatShares.length - 1] = floatShares[floatShares.length - 1] * (10_000 + skew) / 10_000;
+        return floatShares;
     }
 
     /// @dev Mint the seed basket to the deployer and seed, unless SKIP_SEED leaves it to scripts/seed.sh.

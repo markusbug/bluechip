@@ -9,6 +9,7 @@
   "scripts": {
     "test": "cd contracts && forge test",
     "test:ci": "cd contracts && FOUNDRY_PROFILE=ci forge test",
+    "test:testnet": "scripts/testnet.sh",
     "build:contracts": "cd contracts && forge build",
     "abi": "cd contracts && forge build && cd .. && node scripts/export-abi.mjs",
     "basket": "node scripts/basket.mjs",
