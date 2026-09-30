@@ -1,29 +1,33 @@
 #!/usr/bin/env node
 // Turns contracts/basket/mag7.config.json into the seed vector the fund is deployed with.
 //
-// Cap weighting: hold a number of shares of each company proportional to its shares outstanding,
-// scaled so one BLUE is worth `targetUsdPerShare` today. Prices come from the Coinbase Chainlink
-// feeds on Base, which are total-return (already include the token multiplier), so
-//   units_i = target * sharesOut_i / (multiplier_i * totalCap) * 10^decimals
+// Float-adjusted cap weighting, the S&P 500 method: hold a number of shares of each company
+// proportional to its float shares (see scripts/lib/index-data.mjs), scaled so one BLUE is worth
+// `targetUsdPerShare` today. Prices come from the Coinbase Chainlink feeds on Base, which are
+// total-return (already include the token multiplier), so
+//   units_i = target * floatShares_i / (multiplier_i * totalFloatCap) * 10^decimals
+// The same float shares are the rebalancer's initial index, so the fund starts on target.
 // Also snapshots names and icons from the Coinbase API (it has no CORS, so the site can't).
 //
 // Usage: node scripts/basket.mjs [--rpc https://mainnet.base.org]
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { getAddress } from "viem";
+import { floatShares, loadConfig } from "./lib/index-data.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
-const cfgPath = `${root}contracts/basket/mag7.config.json`;
 const outPath = `${root}contracts/basket/mag7.json`;
 const metaPath = `${root}web/src/data/stocks.json`;
 const rpcArg = process.argv.indexOf("--rpc");
 const RPC = rpcArg > 0 ? process.argv[rpcArg + 1] : process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
 
-const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+const cfg = loadConfig();
 // Published addresses sometimes carry a broken EIP-55 checksum; viem rejects those outright.
 for (const c of cfg.constituents) {
   c.address = getAddress(c.address.toLowerCase());
   c.feed = getAddress(c.feed.toLowerCase());
+  c.pool = getAddress(c.pool.toLowerCase());
 }
+const index = await floatShares(cfg);
 
 async function ethCall(to, data) {
   const res = await fetch(RPC, {
@@ -42,28 +46,49 @@ const MAX_FEED_AGE_S = 4 * 24 * 3600; // feeds pause off-hours and over weekends
 
 const now = Math.floor(Date.now() / 1000);
 const rows = [];
-for (const c of cfg.constituents) {
+for (const [i, c] of cfg.constituents.entries()) {
   const round = await ethCall(c.feed, SEL.latestRoundData);
-  const price = Number(word(round, 1)) / 1e8; // feeds use 8 decimals
+  const answer = word(round, 1);
+  const price = Number(answer) / 1e8; // feeds use 8 decimals
   const updatedAt = Number(word(round, 3));
   if (now - updatedAt > MAX_FEED_AGE_S) throw new Error(`${c.symbol}: feed stale (${now - updatedAt}s)`);
-  const multiplier = Number(word(await ethCall(c.address, SEL.multiplier), 0)) / 1e18;
+  const multiplierWad = word(await ethCall(c.address, SEL.multiplier), 0);
+  const multiplier = Number(multiplierWad) / 1e18;
   const decimals = Number(word(await ethCall(c.address, SEL.decimals), 0));
-  rows.push({ ...c, price, multiplier, decimals, cap: (c.sharesOutstanding * price) / multiplier });
+  const { floatShares, sharesOutstanding, sharesSource } = index[i];
+  rows.push({
+    ...c,
+    sharesOutstanding,
+    sharesSource,
+    floatShares,
+    answer,
+    price,
+    multiplier,
+    multiplierWad,
+    decimals,
+    cap: (floatShares * price) / multiplier,
+  });
 }
 
 const totalCap = rows.reduce((s, r) => s + r.cap, 0);
 const tokens = rows.map((r) => {
-  const tokensPerBlue = (cfg.targetUsdPerShare * r.sharesOutstanding) / (r.multiplier * totalCap);
+  const tokensPerBlue = (cfg.targetUsdPerShare * r.floatShares) / (r.multiplier * totalCap);
   const units = BigInt(Math.round(tokensPerBlue * 10 ** r.decimals));
   return {
     symbol: r.symbol,
     address: r.address,
     feed: r.feed,
+    pool: r.pool,
     decimals: r.decimals,
     sharesOutstanding: r.sharesOutstanding,
+    sharesSource: r.sharesSource,
+    listedFraction: r.listedFraction,
+    iwf: r.iwf,
+    floatShares: r.floatShares,
+    priceAnswer: r.answer.toString(),
     price: r.price,
     multiplier: r.multiplier,
+    multiplierWad: r.multiplierWad.toString(),
     weight: +(r.cap / totalCap).toFixed(6),
     units: units.toString(),
   };
@@ -73,11 +98,19 @@ const out = {
   name: cfg.name,
   targetUsdPerShare: cfg.targetUsdPerShare,
   generatedAt: new Date().toISOString(),
-  totalCapUsd: Math.round(totalCap),
+  totalFloatCapUsd: Math.round(totalCap),
+  usdc: getAddress(cfg.usdc.toLowerCase()),
   // Flat arrays for Foundry's vm.parseJson*Array.
   symbols: tokens.map((t) => t.symbol),
   addresses: tokens.map((t) => t.address),
   feeds: tokens.map((t) => t.feed),
+  pools: tokens.map((t) => t.pool),
+  decimals: tokens.map((t) => t.decimals),
+  floatShares: tokens.map((t) => t.floatShares),
+  // WAD token multipliers the float shares were counted at (the rebalancer's index needs both).
+  multipliers: tokens.map((t) => t.multiplierWad),
+  // Raw 8-decimal feed answers, for the mock feeds on local and test chains.
+  prices: tokens.map((t) => t.priceAnswer),
   units: tokens.map((t) => t.units),
   tokens,
 };
@@ -113,7 +146,7 @@ for (const t of tokens) {
 }
 writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 
-console.log(`${cfg.name}: 1 BLUE ≈ $${cfg.targetUsdPerShare}, total cap $${(totalCap / 1e12).toFixed(2)}T`);
+console.log(`${cfg.name}: 1 BLUE ≈ $${cfg.targetUsdPerShare}, float cap $${(totalCap / 1e12).toFixed(2)}T`);
 for (const t of tokens) {
   const per = Number(t.units) / 10 ** t.decimals;
   console.log(`  ${t.symbol.padEnd(7)} ${(t.weight * 100).toFixed(2).padStart(6)}%  ${per.toFixed(8)} per BLUE  ($${(per * t.price).toFixed(2)})`);

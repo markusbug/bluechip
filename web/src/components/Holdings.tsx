@@ -14,8 +14,10 @@ export function Holdings({ fund }: { fund: FundState }) {
       <div className="max-w-2xl">
         <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">What one BLUE holds</h2>
         <p className="mt-3 text-muted">
-          A fixed number of shares of each company, proportional to its shares outstanding. As prices move the mix stays
-          market-cap weighted without trading. The contract never reads a price; prices here are for display.
+          Shares of each company in proportion to its free float, the way the S&P 500 weights. Price moves keep
+          that mix on target by themselves. When share counts change, a new index is posted with 7 days' notice and
+          the fund trades back onto it on its own, in small steps during US market hours. Minting and redeeming never
+          read a price.
         </p>
       </div>
 

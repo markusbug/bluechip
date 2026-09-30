@@ -5,7 +5,7 @@ const steps = [
   },
   {
     title: "0.30% of each mint goes to the CHIP vault",
-    body: "The fee is paid in freshly minted BLUE. The owner can lower it or raise it up to a hard cap of 1%, and cannot touch the stocks.",
+    body: "The fee is paid in freshly minted BLUE. The owner can lower it or raise it up to a hard cap of 1%. Changing who may trade the stocks takes 7 days' notice, so you can redeem first.",
   },
   {
     title: "Burn CHIP to take its share of the vault",

@@ -10,11 +10,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ISwapper} from "./interfaces/ISwapper.sol";
 
 /// @title Bluechip Index ($BLUE)
-/// @notice An ERC-20 backed in kind by a fixed basket of tokens (tokenized stocks).
-///         Mint by depositing the basket pro rata, redeem to get it back. No oracle is ever read:
-///         every amount is a ratio of `holdings[token]` to `totalSupply()`.
+/// @notice An ERC-20 backed in kind by a basket of tokens (tokenized stocks).
+///         Mint by depositing the basket pro rata, redeem to get it back. Mint and redeem never read
+///         an oracle: every amount is a ratio of `holdings[token]` to `totalSupply()`.
+///         The basket's mix is kept on its index by the `rebalancer`, the only address that can trade
+///         holdings (`swapHoldings`). Replacing it takes `REBALANCER_DELAY`, so holders can redeem
+///         first; the owner can switch it off at once.
 /// @dev    Holdings are tracked internally, so tokens sent to the contract directly never change
 ///         mint or redeem amounts. The constructor never calls the constituent tokens (some are
 ///         chain-native precompiles that a local fork cannot execute).
@@ -28,6 +32,8 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
     uint256 public constant DEAD_SHARES = 1e15;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant MAX_CONSTITUENTS = 32;
+    /// @notice Wait between proposing a new rebalancer and it taking over.
+    uint256 public constant REBALANCER_DELAY = 7 days;
 
     /// @notice An EIP-2612 permit for one constituent. `deadline == 0` means "no permit, use the
     ///         existing allowance".
@@ -54,6 +60,12 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
     address public feeRecipient;
     bool public seeded;
 
+    /// @notice The only address that may trade holdings. Zero disables rebalancing.
+    address public rebalancer;
+    address public pendingRebalancer;
+    /// @notice When `pendingRebalancer` can be accepted. Zero means nothing is pending.
+    uint256 public pendingRebalancerEta;
+
     event Seeded(address indexed by, uint256 shares, uint256[] deposited);
     event Minted(
         address indexed by, address indexed to, uint256 shares, uint256 feeShares, uint256[] deposited
@@ -64,6 +76,10 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
     event SupplyCapSet(uint256 cap);
     event FeeRecipientSet(address recipient);
     event Swept(address indexed token, address indexed to, uint256 amount);
+    event RebalancerProposed(address indexed rebalancer, uint256 eta);
+    event RebalancerCancelled(address indexed rebalancer);
+    event RebalancerSet(address indexed rebalancer);
+    event Rebalanced(address indexed sell, uint256 amountIn, address indexed buy, uint256 amountOut);
 
     error BadBasket();
     error ZeroAddress();
@@ -75,6 +91,12 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
     error TransferMismatch(address token);
     error NotConstituent(address token);
     error LengthMismatch();
+    error NotRebalancer();
+    error SameToken();
+    error ExceedsHoldings();
+    error Slippage(uint256 out, uint256 minOut);
+    error NothingPending();
+    error TooEarly(uint256 eta);
 
     constructor(
         string memory name_,
@@ -84,7 +106,8 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
         address owner_,
         address feeRecipient_,
         uint256 mintFeeBps_,
-        uint256 supplyCap_
+        uint256 supplyCap_,
+        address rebalancer_
     ) ERC20(name_, symbol_) ERC20Permit(name_) Ownable(owner_) {
         uint256 n = tokens_.length;
         if (n == 0 || n > MAX_CONSTITUENTS || seedUnits_.length != n) revert BadBasket();
@@ -103,6 +126,8 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
         feeRecipient = feeRecipient_;
         mintFeeBps = mintFeeBps_;
         supplyCap = supplyCap_;
+        rebalancer = rebalancer_;
+        emit RebalancerSet(rebalancer_);
     }
 
     // ---------------------------------------------------------------- mint / redeem
@@ -216,6 +241,34 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
         emit Redeemed(msg.sender, to, shares, paidOut);
     }
 
+    // ---------------------------------------------------------------- rebalancing
+
+    /// @notice Trade `amountIn` of `sell` for at least `minOut` of `buy` through `swapper`.
+    ///         Only the rebalancer can call this; it decides what to trade and how much it must get.
+    /// @dev    The swapper gets exactly `amountIn` (no allowance), and `buy` is credited by what
+    ///         actually arrived. A holding can shrink but never reach zero.
+    function swapHoldings(address sell, uint256 amountIn, address buy, uint256 minOut, address swapper)
+        external
+        nonReentrant
+        returns (uint256 amountOut)
+    {
+        if (msg.sender != rebalancer) revert NotRebalancer();
+        if (!isConstituent[sell]) revert NotConstituent(sell);
+        if (!isConstituent[buy]) revert NotConstituent(buy);
+        if (sell == buy) revert SameToken();
+        if (amountIn == 0) revert ZeroAmount();
+        if (amountIn >= holdings[sell]) revert ExceedsHoldings();
+
+        holdings[sell] -= amountIn;
+        uint256 before = IERC20(buy).balanceOf(address(this));
+        IERC20(sell).safeTransfer(swapper, amountIn);
+        ISwapper(swapper).swap(sell, buy, amountIn, address(this));
+        amountOut = IERC20(buy).balanceOf(address(this)) - before;
+        if (amountOut < minOut) revert Slippage(amountOut, minOut);
+        holdings[buy] += amountOut;
+        emit Rebalanced(sell, amountIn, buy, amountOut);
+    }
+
     function _pull(address token, uint256 amount) private {
         uint256 before = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -282,7 +335,7 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
         toMinter = shares - fee;
     }
 
-    // ---------------------------------------------------------------- admin (cannot touch holdings)
+    // ---------------------------------------------------------------- admin (cannot move holdings out)
 
     function setMintFee(uint256 bps) external onlyOwner {
         if (bps > MAX_FEE_BPS) revert FeeTooHigh();
@@ -299,6 +352,38 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
         if (recipient == address(0)) revert ZeroAddress();
         feeRecipient = recipient;
         emit FeeRecipientSet(recipient);
+    }
+
+    /// @notice Start the `REBALANCER_DELAY` countdown to hand trading to `newRebalancer`
+    ///         (zero proposes switching rebalancing off, which `disableRebalancer` does at once).
+    function proposeRebalancer(address newRebalancer) external onlyOwner {
+        pendingRebalancer = newRebalancer;
+        pendingRebalancerEta = block.timestamp + REBALANCER_DELAY;
+        emit RebalancerProposed(newRebalancer, pendingRebalancerEta);
+    }
+
+    function cancelRebalancer() external onlyOwner {
+        if (pendingRebalancerEta == 0) revert NothingPending();
+        emit RebalancerCancelled(pendingRebalancer);
+        delete pendingRebalancer;
+        delete pendingRebalancerEta;
+    }
+
+    /// @notice Anyone can make a proposed rebalancer take over once its delay has passed.
+    function acceptRebalancer() external {
+        uint256 eta = pendingRebalancerEta;
+        if (eta == 0) revert NothingPending();
+        if (block.timestamp < eta) revert TooEarly(eta);
+        rebalancer = pendingRebalancer;
+        delete pendingRebalancer;
+        delete pendingRebalancerEta;
+        emit RebalancerSet(rebalancer);
+    }
+
+    /// @notice Emergency brake: stop all trading of holdings immediately. Mint and redeem keep working.
+    function disableRebalancer() external onlyOwner {
+        rebalancer = address(0);
+        emit RebalancerSet(address(0));
     }
 
     /// @notice Recover tokens sent here by mistake. Only the excess over `holdings` can leave,

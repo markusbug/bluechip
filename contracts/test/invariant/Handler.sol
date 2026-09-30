@@ -6,9 +6,14 @@ import {BlueFund} from "../../src/BlueFund.sol";
 import {ChipVault} from "../../src/ChipVault.sol";
 import {MockStock} from "../../src/mocks/MockStock.sol";
 import {MockChip} from "../../src/mocks/MockChip.sol";
+import {MockPriceFeed} from "../../src/mocks/MockPriceFeed.sol";
+import {Rebalancer} from "../../src/Rebalancer.sol";
 
-/// @notice Drives random mints, redeems, emergency redeems, donations, fee changes and CHIP claims.
-///         After every action it checks that holdings-per-share and backing-per-CHIP did not drop.
+/// @notice Drives random mints, redeems, emergency redeems, donations, fee changes, CHIP claims,
+///         price moves, index changes and rebalancing trades.
+///         After every action except a trade it checks that holdings-per-share and backing-per-CHIP
+///         did not drop. A trade may shift holdings between stocks, but must not cost more NAV than
+///         the slippage bound on what it traded.
 contract Handler is Test {
     BlueFund internal fund;
     ChipVault internal vault;
@@ -16,23 +21,34 @@ contract Handler is Test {
     MockStock[] internal stocks;
     address internal owner;
     address[] internal actors;
+    Rebalancer internal rebalancer;
+    MockPriceFeed[] internal feeds;
+    address internal updater;
 
     uint256 public calls;
     uint256 public ratioDrops;
     uint256 public backingDrops;
+    uint256 public trades;
+    uint256 public navLeaks;
 
     constructor(
         BlueFund fund_,
         ChipVault vault_,
         MockChip chip_,
         MockStock[] memory stocks_,
-        address owner_
+        address owner_,
+        Rebalancer rebalancer_,
+        MockPriceFeed[] memory feeds_,
+        address updater_
     ) {
         fund = fund_;
         vault = vault_;
         chip = chip_;
         stocks = stocks_;
         owner = owner_;
+        rebalancer = rebalancer_;
+        feeds = feeds_;
+        updater = updater_;
         for (uint256 i; i < 4; ++i) {
             address a = makeAddr(string.concat("actor", vm.toString(i)));
             actors.push(a);
@@ -107,6 +123,62 @@ contract Handler is Test {
         if (bal == 0) return;
         vm.prank(a);
         fund.redeem(bal, a);
+    }
+
+    function movePrice(uint256 idx, uint256 bps) external checked {
+        MockPriceFeed feed = feeds[idx % feeds.length];
+        (, int256 answer,,,) = feed.latestRoundData();
+        // Anything from -50% to +100%, never below $1.
+        uint256 next = uint256(answer) * bound(bps, 5_000, 20_000) / 10_000;
+        feed.setPrice(int256(next < 1e8 ? 1e8 : next));
+    }
+
+    function changeIndex(uint256 idx, uint256 bps) external checked {
+        uint256[] memory fs = rebalancer.floatShares();
+        uint256 i = idx % fs.length;
+        // A company's float moves by -30% to +30%.
+        fs[i] = fs[i] * bound(bps, 7_000, 13_000) / 10_000;
+        if (fs[i] == 0) fs[i] = 1;
+        uint256[] memory ms = rebalancer.multipliers();
+        vm.prank(updater);
+        rebalancer.proposeIndex(fs, ms);
+        vm.warp(block.timestamp + rebalancer.INDEX_DELAY());
+        rebalancer.activateIndex();
+    }
+
+    function rebalance() external {
+        _toSession();
+        if (block.timestamp < rebalancer.lastTradeAt() + rebalancer.cooldown()) {
+            vm.warp(rebalancer.lastTradeAt() + rebalancer.cooldown());
+            _toSession();
+        }
+        (bool ok, uint256 s, uint256 b, uint256 value) = rebalancer.plan();
+        if (!ok) return;
+
+        (,,, uint256 navBefore) = rebalancer.valuation();
+        uint256 supply = fund.totalSupply();
+        rebalancer.rebalance(s, b);
+        calls++;
+        trades++;
+
+        (,,, uint256 navAfter) = rebalancer.valuation();
+        assertEq(fund.totalSupply(), supply);
+        // Rounding in token units can cost a few wei of USD per token.
+        if (navAfter + value * rebalancer.maxSlippageBps() / 10_000 + 1e12 < navBefore) navLeaks++;
+    }
+
+    /// @dev Move to the next US session if closed, and mark every price fresh.
+    function _toSession() internal {
+        if (!rebalancer.marketOpen()) {
+            uint256 day = block.timestamp / 1 days + 1;
+            while ((day + 4) % 7 == 0 || (day + 4) % 7 == 6) {
+                day++;
+            }
+            vm.warp(day * 1 days + 15 hours);
+        }
+        for (uint256 i; i < feeds.length; ++i) {
+            feeds[i].setUpdatedAt(block.timestamp);
+        }
     }
 
     // ------------------------------------------------------------ monotonicity checks

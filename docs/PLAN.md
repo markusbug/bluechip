@@ -24,10 +24,13 @@ The core fund stays small and easy to audit.
 
 ### Cap-weighting comes almost for free
 
-If the fund holds a fixed number of shares of each company, proportional to that company's shares outstanding, the basket **stays market-cap weighted as prices move** and never has to trade.
+The weighting follows the S&P 500 (which Vanguard's VOO tracks): **float-adjusted market cap**.
+Each company counts only its listed share classes (Alphabet A + C, Meta A) times its investable weight factor (IWF), the fraction not held by officers, directors and other strategic holders.
+
+If the fund holds a fixed number of shares of each company, proportional to those float shares, the basket **stays float-adjusted cap weighted as prices move** and never has to trade.
 Trades are only needed when:
 - a company enters or leaves the index,
-- a company's share count changes materially (buybacks, issuance),
+- a company's float shares change materially (buybacks, issuance, insider sales; S&P applies these at its quarterly rebalance),
 - corporate actions happen (splits, dividends; see Open Questions).
 
 That's why v1 can skip rebalancing entirely.
@@ -35,7 +38,7 @@ That's why v1 can skip rebalancing entirely.
 ## 2. The index
 
 We can't do all 500 on day one because only a limited set of stocks is tokenized on Base.
-Plan: **"Bluechip 10"** (or N), the top-N US large caps that are available as tokens on Base with decent liquidity, cap-weighted.
+Plan: **"Bluechip 10"** (or N), the top-N US large caps that are available as tokens on Base with decent liquidity, float-adjusted cap weighted.
 The index grows as more tickers are listed.
 
 > Avoid the name "S&P 500" in the product. It's a trademark and the index is licensed.
@@ -128,7 +131,7 @@ This is where MEV and sandwich risk sits, so the user always sets the min-out.
 - [ ] Single page: NAV, holdings pie, mint with USDC, redeem, CHIP backing
 
 **M4: v2 ideas (later)**
-- [ ] Index updates via a timelocked `rebalance` with bounded trades (or an auction-based rebalance)
+- [x] Index updates via a timelocked `rebalance` with bounded trades (`Rebalancer`: 7-day index delay, oracle-bounded DEX swaps, permissionless keeper)
 - [ ] Cash redeem with oracle-checked NAV
 - [ ] Management fee (streaming) in addition to the mint fee
 - [ ] Automatic dividend handling

@@ -16,6 +16,9 @@ export type Deployment = {
   fund: Address;
   vault: Address;
   chip: Address;
+  /** Trades the holdings back onto the index. Absent in deployments made before it existed. */
+  rebalancer?: Address;
+  swapper?: Address;
   tokens: Address[];
   feeds: Address[];
   symbols: string[];

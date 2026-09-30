@@ -9,7 +9,7 @@ contract FundInvariantTest is Fixture {
 
     function setUp() public override {
         super.setUp();
-        handler = new Handler(fund, vault, chip, stocks, owner);
+        handler = new Handler(fund, vault, chip, stocks, owner, rebalancer, feeds, updater);
         targetContract(address(handler));
     }
 
@@ -29,18 +29,12 @@ contract FundInvariantTest is Fixture {
         }
     }
 
-    /// Holdings per share never fall below the seed ratio.
-    function invariant_atLeastSeedRatio() public view {
-        uint256 s = fund.totalSupply();
-        for (uint256 i; i < tokens.length; ++i) {
-            assertGe(fund.holdings(tokens[i]) * 1e18, units[i] * s);
-        }
-    }
-
-    /// Checked step by step in the handler: no action lowered holdings per share or CHIP backing.
+    /// Checked step by step in the handler: no action other than a trade lowered holdings per
+    /// share, nothing lowered CHIP backing, and no trade cost more than its slippage bound.
     function invariant_monotone() public view {
         assertEq(handler.ratioDrops(), 0);
         assertEq(handler.backingDrops(), 0);
+        assertEq(handler.navLeaks(), 0);
     }
 
     /// The vault never holds CHIP after a claim, and CHIP supply only goes down.

@@ -14,12 +14,12 @@ contract BlueFundTest is Fixture {
         address[] memory t = new address[](0);
         uint256[] memory u = new uint256[](0);
         vm.expectRevert(BlueFund.BadBasket.selector);
-        new BlueFund("B", "B", t, u, owner, owner, 0, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 0, CAP, address(0));
 
         t = new address[](2);
         u = new uint256[](1);
         vm.expectRevert(BlueFund.BadBasket.selector);
-        new BlueFund("B", "B", t, u, owner, owner, 0, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 0, CAP, address(0));
 
         u = new uint256[](2);
         t[0] = tokens[0];
@@ -27,23 +27,23 @@ contract BlueFundTest is Fixture {
         u[0] = 1;
         u[1] = 1;
         vm.expectRevert(BlueFund.BadBasket.selector); // duplicate
-        new BlueFund("B", "B", t, u, owner, owner, 0, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 0, CAP, address(0));
 
         t[1] = address(0);
         vm.expectRevert(BlueFund.BadBasket.selector); // zero token
-        new BlueFund("B", "B", t, u, owner, owner, 0, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 0, CAP, address(0));
 
         t[1] = tokens[1];
         u[1] = 0;
         vm.expectRevert(BlueFund.BadBasket.selector); // zero units
-        new BlueFund("B", "B", t, u, owner, owner, 0, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 0, CAP, address(0));
 
         u[1] = 1;
         vm.expectRevert(BlueFund.FeeTooHigh.selector);
-        new BlueFund("B", "B", t, u, owner, owner, 101, CAP);
+        new BlueFund("B", "B", t, u, owner, owner, 101, CAP, address(0));
 
         vm.expectRevert(BlueFund.ZeroAddress.selector);
-        new BlueFund("B", "B", t, u, owner, address(0), 30, CAP);
+        new BlueFund("B", "B", t, u, owner, address(0), 30, CAP, address(0));
     }
 
     function test_constructor_state() public view {
@@ -79,7 +79,7 @@ contract BlueFundTest is Fixture {
     }
 
     function test_seed_onlyOwnerAndChecks() public {
-        BlueFund f = new BlueFund("B", "B", tokens, units, owner, owner, 30, 5e18);
+        BlueFund f = new BlueFund("B", "B", tokens, units, owner, owner, 30, 5e18, address(0));
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         f.seed(1e18);
@@ -94,7 +94,7 @@ contract BlueFundTest is Fixture {
     }
 
     function test_mint_beforeSeedReverts() public {
-        BlueFund f = new BlueFund("B", "B", tokens, units, owner, owner, 30, CAP);
+        BlueFund f = new BlueFund("B", "B", tokens, units, owner, owner, 30, CAP, address(0));
         vm.expectRevert(BlueFund.NotSeeded.selector);
         f.mint(1e18, alice);
     }
@@ -105,7 +105,7 @@ contract BlueFundTest is Fixture {
         uint256[] memory u = new uint256[](1);
         t[0] = address(fot);
         u[0] = 1e18;
-        BlueFund f = new BlueFund("B", "B", t, u, owner, owner, 30, CAP);
+        BlueFund f = new BlueFund("B", "B", t, u, owner, owner, 30, CAP, address(0));
         fot.mint(owner, 10e18);
         vm.startPrank(owner);
         fot.approve(address(f), type(uint256).max);

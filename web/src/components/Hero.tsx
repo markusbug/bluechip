@@ -22,7 +22,7 @@ export function Hero({ fund }: { fund: FundState }) {
           Seven blue chips in one token.
         </h1>
         <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
-          $BLUE holds real tokenized shares of {names} on Base, weighted by market cap. Mint it by depositing the
+          $BLUE holds real tokenized shares of {names} on Base, weighted by float-adjusted market cap like the S&P 500. Mint it by depositing the
           stocks and redeem it for them whenever you like. Every mint pays {(fund.mintFeeBps / 100).toFixed(2)}% into
           $CHIP.
         </p>

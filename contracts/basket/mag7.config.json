@@ -1,49 +1,71 @@
 {
   "name": "Bluechip 7",
   "targetUsdPerShare": 100,
-  "note": "sharesOutstanding: total common shares (all classes), approximate. Verify against the latest 10-Q before a mainnet deploy, then rerun `npm run basket`.",
+  "note": "Float-adjusted market-cap weighting, like the S&P 500 (and so Vanguard's VOO). Float shares = sharesOutstanding (fetched live from SEC EDGAR by `cik`) x listedFraction x iwf. listedFraction: the share of the company's stock in listed classes S&P counts (Alphabet: Class A + C, not B; Meta: Class A, not B); EDGAR only reports their total. iwf: S&P's investable weight factor, the fraction of listed shares not held by officers, directors and other strategic holders. Both are estimates from proxy statements; check them yearly (after proxy season) or after a large insider change. pool: the stock's USDC pool on Aerodrome Slipstream, used by the rebalancer.",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   "constituents": [
     {
       "symbol": "NVDAc",
       "address": "0xb20000000000000000000078ee7ce2fE4908108C",
       "feed": "0x04689a41629776563E6822F76f2e57D148d28513",
-      "sharesOutstanding": 24300000000
+      "pool": "0x853f5f1b92b16714fe6cda67caad0856b83c7ab9",
+      "cik": 1045810,
+      "listedFraction": 1.0,
+      "iwf": 0.96
     },
     {
       "symbol": "AAPLc",
       "address": "0xb200000000000000000000C2e324d24d7eEcd1fb",
       "feed": "0x787f13dEa48Db0897CbCDD985de77809D837F988",
-      "sharesOutstanding": 14840000000
+      "pool": "0xa3b1e3f9747065e2073722ff4c9027d3ea4994f0",
+      "cik": 320193,
+      "listedFraction": 1.0,
+      "iwf": 1.0
     },
     {
       "symbol": "MSFTc",
       "address": "0xB200000000000000000000Ab99cFa739E253872B",
       "feed": "0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c",
-      "sharesOutstanding": 7430000000
+      "pool": "0x7103eb3c9590d1281f7dc03b2a9ee27c39df5d54",
+      "cik": 789019,
+      "listedFraction": 1.0,
+      "iwf": 1.0
     },
     {
       "symbol": "GOOGLc",
       "address": "0xb2000000000000000000002D0BA3164cc74f58B7",
       "feed": "0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2",
-      "sharesOutstanding": 12100000000
+      "pool": "0xb1987cad1682841b4b641d50e520777ec5ab5542",
+      "cik": 1652044,
+      "listedFraction": 0.93,
+      "iwf": 0.97
     },
     {
       "symbol": "AMZNc",
       "address": "0xb200000000000000000000d9192b6B456483C2E8",
       "feed": "0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295",
-      "sharesOutstanding": 10680000000
+      "pool": "0xd03bc8c7f2faedce2aac81bf0444aea08ea06e9b",
+      "cik": 1018724,
+      "listedFraction": 1.0,
+      "iwf": 0.9
     },
     {
       "symbol": "METAc",
       "address": "0xb2000000000000000000008bC8786B856E61707C",
       "feed": "0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D",
-      "sharesOutstanding": 2510000000
+      "pool": "0xeaf57753bc382e0324a1d43f72e7027705a2273e",
+      "cik": 1326801,
+      "listedFraction": 0.865,
+      "iwf": 0.99
     },
     {
       "symbol": "TSLAc",
       "address": "0xb2000000000000000000001e800a7f5189430cD0",
       "feed": "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
-      "sharesOutstanding": 3220000000
+      "pool": "0x469337fdcc5e8f38e2e4b670b04f57865d13a7bb",
+      "cik": 1318605,
+      "listedFraction": 1.0,
+      "iwf": 0.76
     }
   ]
 }
