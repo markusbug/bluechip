@@ -64,9 +64,10 @@ retry() {
       printf '%s\n' "$out"
       return 0
     fi
-    # A revert is an answer; only a node that is behind is worth asking again.
-    grep -qiE "header not found|unknown block|block not found|not available|missing trie|rate limit|429" <<<"$out" ||
-      break
+    # A revert is an answer; only a node that is behind (or busy) is worth asking again. Nodes word
+    # it differently: "header not found", "block 0x2d4d5a7 not found", "unknown block".
+    grep -qi "revert" <<<"$out" && break
+    grep -qiE "not found|unknown block|not available|missing trie|rate limit|429|timed out" <<<"$out" || break
     sleep 1
   done
   printf '%s\n' "$out" >&2
