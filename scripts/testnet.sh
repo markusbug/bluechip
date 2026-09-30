@@ -9,6 +9,7 @@
 # skipped, and REUSE=1 reruns the checks on the same deployment later.
 #
 #   scripts/testnet.sh                        # keystore account mhaas, asks for its password once
+#   ETH_PASSWORD=~/.pw scripts/testnet.sh     # or read it from a file (Foundry's convention)
 #   ACCOUNT=other RPC_URL=https://... scripts/testnet.sh
 #   REUSE=1 scripts/testnet.sh                # skip the deploy, test deployments/<chain>.json
 #   BRAKE=1 scripts/testnet.sh                # also test disableRebalancer (leaves it off)
@@ -25,9 +26,14 @@ if [[ -n ${PRIVATE_KEY:-} ]]; then
   SIGNER=(--private-key "$PRIVATE_KEY")
 else
   ACCOUNT=${ACCOUNT:-mhaas}
+  # Foundry reads ETH_PASSWORD as the path of a file holding the password, not the password.
   if [[ -z ${ETH_PASSWORD:-} ]]; then
-    read -rsp "Password for keystore '$ACCOUNT': " ETH_PASSWORD
+    read -rsp "Password for keystore '$ACCOUNT': " password
     echo
+    ETH_PASSWORD=$(mktemp) # created readable by you only
+    trap 'rm -f "$ETH_PASSWORD"' EXIT
+    printf '%s' "$password" >"$ETH_PASSWORD"
+    unset password
     export ETH_PASSWORD
   fi
   SIGNER=(--account "$ACCOUNT")
