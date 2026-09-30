@@ -4,12 +4,12 @@ const steps = [
     body: "Minting pulls each stock in the fund's current proportion. Deposits round in the fund's favour, so no one can mint cheaper than the holders before them.",
   },
   {
-    title: "0.30% of each mint goes to the CHIP vault",
-    body: "The fee is paid in freshly minted BLUE. The owner can lower it or raise it up to a hard cap of 1%. Changing who may trade the stocks takes 7 days' notice, so you can redeem first.",
+    title: "0.30% of each mint buys and burns CHIP",
+    body: "The fee is paid in freshly minted BLUE to the CHIP burner. The owner can lower it or raise it up to a hard cap of 1%. Changing who may trade the stocks takes 7 days' notice, so you can redeem first.",
   },
   {
-    title: "Burn CHIP to take its share of the vault",
-    body: "Your cut is vault BLUE times your CHIP divided by all CHIP in existence, including CHIP in the trading pool.",
+    title: "The burner turns fees into burned CHIP",
+    body: "It redeems the fee BLUE for the stocks, sells them for USDC, buys CHIP in its trading pool and burns it. Burned CHIP is gone for good, so every mint shrinks the supply.",
   },
   {
     title: "Redeem BLUE for the stocks, any time",

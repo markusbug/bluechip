@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const root = new URL("..", import.meta.url).pathname;
 const contracts = {
   blueFundAbi: "BlueFund.sol/BlueFund.json",
-  chipVaultAbi: "ChipVault.sol/ChipVault.json",
+  chipBurnerAbi: "ChipBurner.sol/ChipBurner.json",
   chipAbi: "IChip.sol/IChip.json",
   mockStockAbi: "MockStock.sol/MockStock.json",
   mockChipAbi: "MockChip.sol/MockChip.json",

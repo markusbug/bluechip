@@ -133,7 +133,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
       <p className="mt-2 text-sm text-muted">
         {value !== undefined && `Worth about ${usd(value)}. `}
         You receive {shares ? fmt(shares - fee, 18) : "0"} BLUE; {fmt(fee, 18)} BLUE ({(fund.mintFeeBps / 100).toFixed(2)}%) goes to
-        the $CHIP vault.
+        buying and burning $CHIP.
       </p>
 
       <h3 className="mt-6 text-sm font-semibold">You deposit</h3>

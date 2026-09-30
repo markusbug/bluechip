@@ -3,7 +3,8 @@ pragma solidity 0.8.30;
 
 import {DeploymentIO} from "./DeploymentIO.sol";
 import {BlueFund} from "../src/BlueFund.sol";
-import {ChipVault} from "../src/ChipVault.sol";
+import {ChipBurner} from "../src/ChipBurner.sol";
+import {MockChipSwapper} from "../src/mocks/MockChipSwapper.sol";
 import {MockStock} from "../src/mocks/MockStock.sol";
 import {MockChip} from "../src/mocks/MockChip.sol";
 import {MockBasketFaucet} from "../src/mocks/MockBasketFaucet.sol";
@@ -12,11 +13,11 @@ import {MockOracleSwapper} from "../src/mocks/MockOracleSwapper.sol";
 import {Rebalancer} from "../src/Rebalancer.sol";
 import {ISwapper} from "../src/interfaces/ISwapper.sol";
 import {IChip} from "../src/interfaces/IChip.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Local / Base Sepolia: mock stocks with the real symbols and seed ratio, a mock CHIP,
-///         mock price feeds at the basket's snapshot prices, an oracle-priced mock DEX, and the fund,
-///         vault and rebalancer, seeded and ready. The rebalancer only trades in the US regular
+///         mock price feeds at the basket's snapshot prices, an oracle-priced mock DEX that also sells
+///         stocks for mock USDC, a mock CHIP market ($0.01, 10B CHIP of stock), and the fund, CHIP
+///         burner and rebalancer, seeded and ready. KEEPER (default: the deployer) runs the burns. The rebalancer only trades in the US regular
 ///         session and needs fresh prices: poke the feeds with `setPrice` to test it.
 ///         SKEW_INDEX_BPS (test only) raises the last constituent's float in the rebalancer's first
 ///         index, so the fund starts off target and trades can be tested without the 7-day delay.
@@ -29,9 +30,11 @@ contract DeployMocks is DeploymentIO {
         address[] feeds;
         MockChip chip;
         MockOracleSwapper swapper;
+        MockStock usdc;
+        MockChipSwapper chipSwapper;
     }
 
-    function run() external returns (BlueFund fund, ChipVault vault, Rebalancer rebalancer) {
+    function run() external returns (BlueFund fund, ChipBurner burner, Rebalancer rebalancer) {
         Basket memory b = _readBasket();
 
         vm.startBroadcast();
@@ -39,7 +42,7 @@ contract DeployMocks is DeploymentIO {
         Mocks memory m = _deployMocks(b, deployer);
 
         uint256 nonce = vm.getNonce(deployer);
-        address predictedVault = vm.computeCreateAddress(deployer, nonce + 1);
+        address predictedBurner = vm.computeCreateAddress(deployer, nonce + 1);
         address predictedRebalancer = vm.computeCreateAddress(deployer, nonce + 2);
         fund = new BlueFund(
             "Bluechip Index",
@@ -47,12 +50,20 @@ contract DeployMocks is DeploymentIO {
             m.tokens,
             b.units,
             deployer,
-            predictedVault,
+            predictedBurner,
             30,
             1_000_000e18,
             predictedRebalancer
         );
-        vault = new ChipVault(IERC20(address(fund)), IChip(address(m.chip)));
+        burner = new ChipBurner(
+            fund,
+            IChip(address(m.chip)),
+            address(m.usdc),
+            ISwapper(address(m.swapper)),
+            ISwapper(address(m.chipSwapper)),
+            deployer,
+            vm.envOr("KEEPER", deployer)
+        );
         rebalancer = new Rebalancer(
             fund,
             ISwapper(address(m.swapper)),
@@ -64,7 +75,7 @@ contract DeployMocks is DeploymentIO {
             deployer,
             _rebalancerParams()
         );
-        require(address(vault) == predictedVault, "vault address mismatch");
+        require(address(burner) == predictedBurner, "burner address mismatch");
         require(address(rebalancer) == predictedRebalancer, "rebalancer address mismatch");
 
         _seed(fund, deployer);
@@ -73,7 +84,7 @@ contract DeployMocks is DeploymentIO {
 
         _writeDeployment(
             address(fund),
-            address(vault),
+            address(burner),
             address(m.chip),
             address(rebalancer),
             address(m.swapper),
@@ -95,6 +106,15 @@ contract DeployMocks is DeploymentIO {
         }
         m.chip = new MockChip(deployer);
         m.swapper = new MockOracleSwapper(m.tokens, m.feeds, 30);
+        // Mock USDC at $1, sold for by the same mock DEX, and a CHIP market at $0.01.
+        m.usdc = new MockStock("USD Coin", "USDC", 6);
+        address[] memory usdcOnly = new address[](1);
+        address[] memory usdcFeed = new address[](1);
+        usdcOnly[0] = address(m.usdc);
+        usdcFeed[0] = address(new MockPriceFeed(1e8));
+        m.swapper.addTokens(usdcOnly, usdcFeed);
+        m.chipSwapper = new MockChipSwapper(address(m.usdc), address(m.chip), 1e14);
+        m.chip.transfer(address(m.chipSwapper), 10_000_000_000e18);
     }
 
     function _skewed(uint256[] memory floatShares) private view returns (uint256[] memory) {

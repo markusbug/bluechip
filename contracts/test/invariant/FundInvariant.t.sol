@@ -9,7 +9,7 @@ contract FundInvariantTest is Fixture {
 
     function setUp() public override {
         super.setUp();
-        handler = new Handler(fund, vault, chip, stocks, owner, rebalancer, feeds, updater);
+        handler = new Handler(fund, burner, chip, usdc, keeper, stocks, owner, rebalancer, feeds, updater);
         targetContract(address(handler));
     }
 
@@ -30,15 +30,25 @@ contract FundInvariantTest is Fixture {
     }
 
     /// Checked step by step in the handler: no action other than a trade lowered holdings per
-    /// share, nothing lowered CHIP backing, and no trade cost more than its slippage bound.
+    /// share, no trade cost more than its slippage bound, and every burn took exactly what it
+    /// burned out of CHIP supply.
     function invariant_monotone() public view {
         assertEq(handler.ratioDrops(), 0);
-        assertEq(handler.backingDrops(), 0);
         assertEq(handler.navLeaks(), 0);
+        assertEq(handler.chipLeaks(), 0);
     }
 
-    /// The vault never holds CHIP after a claim, and CHIP supply only goes down.
+    /// CHIP supply only goes down.
     function invariant_chipSupplyNeverGrows() public view {
         assertLe(chip.totalSupply(), chip.SUPPLY());
+    }
+
+    /// Between burns the burner holds nothing but fee BLUE: no stock, USDC or CHIP left behind.
+    function invariant_burnerHoldsOnlyBlue() public view {
+        for (uint256 i; i < tokens.length; ++i) {
+            assertEq(stocks[i].balanceOf(address(burner)), 0);
+        }
+        assertEq(usdc.balanceOf(address(burner)), 0);
+        assertEq(chip.balanceOf(address(burner)), 0);
     }
 }

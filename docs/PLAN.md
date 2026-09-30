@@ -111,7 +111,7 @@ This is where MEV and sandwich risk sits, so the user always sets the min-out.
 
 **Decisions:**
 - **Fee:** 0.30%.
-- **CHIP launch:** launched with Bankr (Doppler), with burn-to-claim in a separate ownerless `ChipVault`, because Bankr deploys its own token contract.
+- **CHIP launch:** launched with Bankr (Doppler), because Bankr deploys its own token contract. The mint fee first went to an ownerless burn-to-claim `ChipVault`; it now goes to `ChipBurner`, which buys CHIP on its pool and burns it.
 - **Site:** mints in kind, with per-stock "Buy on Bankr" links. The USDC Zap is deferred.
 
 **M1: Core contracts (Sat)** (done: BlueFund, ChipVault, 49 tests incl. invariants)

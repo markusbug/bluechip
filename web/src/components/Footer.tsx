@@ -4,7 +4,10 @@ export function Footer() {
   const links = deployment
     ? [
         { label: "BLUE fund", href: siteConfig.explorerAddress(deployment.fund) },
-        { label: "CHIP vault", href: siteConfig.explorerAddress(deployment.vault) },
+        ...(deployment.rebalancer ? [{ label: "Rebalancer", href: siteConfig.explorerAddress(deployment.rebalancer) }] : []),
+        ...(deployment.burner && !/^0x0+$/.test(deployment.burner)
+          ? [{ label: "CHIP burner", href: siteConfig.explorerAddress(deployment.burner) }]
+          : []),
       ]
     : [];
   return (
@@ -16,7 +19,10 @@ export function Footer() {
             stocks are issued by Coinbase and are not available to US persons; their issuer can pause or freeze them. BLUE and
             CHIP can lose value. Check the rules where you live before using it.
           </p>
-          <p>Stock prices come from Chainlink feeds and are shown for information only. The contracts never read them.</p>
+          <p>
+            Stock prices come from Chainlink feeds. Minting and redeeming never read them; the rebalancer uses them to size and
+            check its trades.
+          </p>
         </div>
         <ul className="space-y-2">
           {links.map((l) => (

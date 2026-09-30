@@ -58,6 +58,19 @@ contract AerodromeSwapperTest is Test {
         assertEq(out, 1e8);
     }
 
+    function test_singleHopWithUsdc() public {
+        // Stock -> USDC (the CHIP burner's leg): 1 NVDA -> $200.
+        nvda.mint(address(swapper), 1e8);
+        uint256 out = swapper.swap(address(nvda), address(usdc), 1e8, fund);
+        assertEq(out, 200e6);
+        assertEq(usdc.balanceOf(fund), 200e6);
+        // And USDC -> stock: $250 -> 1 AAPL.
+        usdc.mint(address(swapper), 250e6);
+        out = swapper.swap(address(usdc), address(aapl), 250e6, fund);
+        assertEq(out, 1e8);
+        assertEq(nvda.balanceOf(address(swapper)) + usdc.balanceOf(address(swapper)), 0);
+    }
+
     function test_rejectsUnknownToken() public {
         MockStock other = new MockStock("Other", "X", 8);
         vm.expectRevert(abi.encodeWithSelector(AerodromeSwapper.NoPool.selector, address(other)));

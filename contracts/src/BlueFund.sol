@@ -56,7 +56,7 @@ contract BlueFund is ERC20Permit, Ownable2Step, ReentrancyGuard {
     uint256 public mintFeeBps;
     /// @notice Maximum total supply. Zero pauses minting; redeeming can never be paused.
     uint256 public supplyCap;
-    /// @notice Receives the mint fee, as freshly minted shares (the $CHIP vault).
+    /// @notice Receives the mint fee, as freshly minted shares (the $CHIP burner).
     address public feeRecipient;
     bool public seeded;
 

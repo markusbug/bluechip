@@ -14,7 +14,8 @@ export type Deployment = {
   startBlock: number;
   mock: boolean;
   fund: Address;
-  vault: Address;
+  /** Buys and burns CHIP with the mint fees. Absent until CHIP exists. */
+  burner?: Address;
   chip: Address;
   /** Trades the holdings back onto the index. Absent in deployments made before it existed. */
   rebalancer?: Address;

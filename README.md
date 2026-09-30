@@ -7,7 +7,7 @@ Base is blue. The stocks are blue chips. Two tokens:
 | Token | Ticker | What it is |
 |---|---|---|
 | Bluechip Index | `$BLUE` | The fund share. An ERC-20 backed in kind by the seven largest US tech stocks (NVDA, AAPL, GOOGL, MSFT, AMZN, META, TSLA), weighted by float-adjusted market cap like the S&P 500 and kept on that index automatically. Mint by depositing the basket, redeem to get it back. |
-| Chip | `$CHIP` | The project token, launched on [Bankr](https://bankr.bot). Every mint pays 0.30% in `$BLUE` into the CHIP vault; burn CHIP there for your pro-rata share. |
+| Chip | `$CHIP` | The project token, launched on [Bankr](https://bankr.bot). Every mint pays 0.30% in `$BLUE` to the CHIP burner, which uses it to buy CHIP and burn it. |
 
 Put the two together and you get **BLUE + CHIP**.
 
@@ -15,12 +15,12 @@ Put the two together and you get **BLUE + CHIP**.
 
 ```
              deposit 7 stocks                          0.30% of each mint (as BLUE)
-  minter  ───────────────────────►  BlueFund ($BLUE)  ────────────────────────────►  ChipVault
-          ◄───────────────────────                                                       │
-             BLUE (minus the fee)      redeem: burn BLUE, get the stocks back            │ burn CHIP,
-                                       (free, never paused)                              │ get vault BLUE
-                                                                                          ▼ pro rata
-                                                                              $CHIP holders (Bankr token)
+  minter  ───────────────────────►  BlueFund ($BLUE)  ────────────────────────────►  ChipBurner
+          ◄───────────────────────                                                       │ redeem, sell stocks
+             BLUE (minus the fee)      redeem: burn BLUE, get the stocks back            │ for USDC, buy CHIP
+                                       (free, never paused)                              │ on its pool
+                                                                                          ▼
+                                                                                 burned $CHIP (Bankr token)
 
   SEC EDGAR ──► index-update ──► Rebalancer ──(7-day delay)──► new index
                                      │
@@ -29,7 +29,7 @@ Put the two together and you get **BLUE + CHIP**.
 
 - **Mint and redeem never read an oracle.** They are pure ratios of `holdings / totalSupply`. Deposits round up and payouts round down, so between trades the ratio only ever grows.
 - **The stocks** are Coinbase's tokenized equities: native B20 tokens on Base (`AAPLc`, … at `0xb200…`), 8 decimals, EIP-2612 permit. Dividends and splits move a `multiplier()`, not balances, so the basket needs no rebalancing for them.
-- **`$CHIP`** is a standard Bankr/Doppler token (100B supply, `burn`, `permit`). Its "fees flow into the token" logic lives in `ChipVault`, which has no owner. `claim` burns CHIP and pays `vaultBLUE × amount / CHIP.totalSupply()`, so the backing per CHIP never decreases.
+- **`$CHIP`** is a standard Bankr/Doppler token (100B supply, `burn`, `permit`) trading in a Uniswap v4 pool against WETH. The fund's mint fee goes to `ChipBurner`, which redeems the BLUE for the stocks, sells them for USDC (Aerodrome), swaps to WETH and buys CHIP in its v4 pool (`ChipSwapper`), then burns it. Only the burner's keeper can start a burn, because it sets the minimum CHIP out: CHIP has no price feed, so an open trigger could be sandwiched. The keeper can get a bad price on a burn, but nothing it does sends the fees anywhere but into burned CHIP.
 - **Admin** is `Ownable2Step`. On the fund it sets the mint fee (hard-capped at 1%), the supply cap (0 pauses minting) and the fee recipient. It can also replace the rebalancer, which takes 7 days so holders can redeem first, or switch rebalancing off at once. It can never move holdings out itself.
 - **Frozen stock?** `redeemExcept` lets you leave a paused constituent behind and still exit with the rest.
 - **Browser wallets** (MetaMask, Rabby) mint with one gasless permit per stock plus a single `mintWithPermits` transaction. Smart wallets (Base Account, Ambire) batch approvals and the mint atomically (EIP-5792). After the first mint it's one click.
@@ -51,13 +51,17 @@ The fund weights like the S&P 500 (which Vanguard's VOO tracks): float-adjusted 
 ```
 contracts/                Foundry
   src/BlueFund.sol        $BLUE: in-kind seed/mint/mintWithPermits/redeem/redeemExcept, capped fee
-  src/ChipVault.sol       holds the BLUE fees; claim / claimWithPermit burn CHIP
+  src/ChipBurner.sol      receives the BLUE fees; the keeper's burn turns them into burned CHIP
+  src/ChipSwapper.sol     USDC -> WETH (Aerodrome) -> CHIP (its Uniswap v4 pool), no router
   src/Rebalancer.sol      the index (float shares, 7-day updates) and permissionless rebalance
   src/AerodromeSwapper.sol  stock -> USDC -> stock through Aerodrome Slipstream pools
   src/mocks/              MockStock, MockChip (mimics the Bankr token), MockBasketFaucet,
-                          MockPriceFeed, MockOracleSwapper (a DEX at feed prices)
+                          MockPriceFeed, MockOracleSwapper (a DEX at feed prices),
+                          MockChipSwapper (a CHIP market at a fixed price)
   test/                   unit, fuzz and invariant tests (83 tests; 100% line coverage on src)
-  script/Deploy.s.sol     mainnet: fund + vault + swapper + rebalancer over real stocks and CHIP
+  script/Deploy.s.sol     mainnet: fund + swapper + rebalancer (+ CHIP burner once CHIP exists)
+  script/DeployBurner.s.sol  adds the CHIP burner to a fund deployed before CHIP
+  test/fork/              the CHIP route against a live Bankr pool (BASE_FORK_URL=... to run)
   script/DeployMocks.s.sol  local / Base Sepolia with mocks, seeded
   basket/mag7.config.json   tickers, addresses, feeds, pools, CIKs, IWFs  (edit this)
   basket/mag7.json          generated seed vector                          (npm run basket)
@@ -81,12 +85,12 @@ npm install
 npm test                       # forge test: unit + fuzz + invariants
 
 npm run chain                  # anvil on :8545 (separate terminal)
-npm run deploy:local           # mock stocks, feeds, DEX + mock CHIP + fund + vault + rebalancer, seeded
+npm run deploy:local           # mock stocks, feeds, DEX + mock CHIP + fund + burner + rebalancer, seeded
 cp web/.env.example web/.env   # set VITE_CHAIN=anvil
 npm run web                    # http://localhost:5173
 ```
 
-On the local chain the wallet menu offers an **Anvil dev account**, and the site has faucets for test stocks and test CHIP. Everything works end to end: mint (permits + one tx), redeem, burn CHIP.
+On the local chain the wallet menu offers an **Anvil dev account**, and the site has faucets for test stocks and test CHIP. Everything works end to end: mint (permits + one tx), redeem, and the keeper's CHIP burn.
 
 To watch a rebalance, start anvil inside the US session (`anvil --timestamp <a weekday 15:00 UTC>`), propose a changed index with `cast send <rebalancer> "proposeIndex(uint256[],uint256[])"`, skip the delay with `cast rpc evm_increaseTime 604800`, refresh the mock feeds (`setPrice`), and run `KEEPER_KEY=<anvil key> CHAIN_ID=31337 RPC_URL=http://127.0.0.1:8545 npm run keeper`.
 
@@ -95,14 +99,8 @@ To watch a rebalance, start anvil inside the US session (`anvil --timestamp <a w
 See [`docs/LAUNCH.md`](docs/LAUNCH.md). In short:
 
 1. Put the site up (it shows the planned basket at live prices).
-2. Launch CHIP with Bankr:
-
-   ```bash
-   bankr launch --name "Chip" --symbol CHIP --image https://bluechip.markushaas.com/chip.png \
-     --website https://bluechip.markushaas.com --fee <wallet> --fee-type wallet --simulate
-   ```
-
-3. Run `forge script script/Deploy.s.sol` with `CHIP_ADDRESS`.
+2. Launch CHIP with Bankr, and read its pool key with `node scripts/chip-pool.mjs <CHIP>`.
+3. Run `forge script script/Deploy.s.sol` with `CHIP_ADDRESS` and the pool key (or deploy the fund first and add the burner later with `DeployBurner.s.sol`).
 4. Seed with `scripts/seed.sh`.
 5. Redeploy the site.
 6. Turn on the automation (keys in GitHub secrets, then add `8453` to `KEEPER_CHAINS` and `INDEX_CHAINS`).
@@ -115,7 +113,7 @@ See [`docs/LAUNCH.md`](docs/LAUNCH.md). In short:
 
 ## Status and risks
 
-Unaudited weekend-project code. Keep the supply cap low. The rebalancer adds oracle, DEX and keeper dependencies that mint and redeem don't have; the owner can switch it off at once with `disableRebalancer()`. Coinbase's tokenized stocks are not offered to US persons, and their issuer can pause or restrict transfers. An index product and a fee-accruing token can raise securities questions. Check them before a public launch.
+Unaudited weekend-project code. Keep the supply cap low. The rebalancer adds oracle, DEX and keeper dependencies that mint and redeem don't have; the owner can switch it off at once with `disableRebalancer()`. Coinbase's tokenized stocks are not offered to US persons, and their issuer can pause or restrict transfers. An index product and a token bought back with its fees can raise securities questions. Check them before a public launch.
 
 ## License
 

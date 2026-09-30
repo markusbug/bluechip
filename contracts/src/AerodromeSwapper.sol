@@ -8,8 +8,9 @@ import {ISwapper} from "./interfaces/ISwapper.sol";
 import {ICLPool} from "./interfaces/ICLPool.sol";
 
 /// @notice Swaps one stock for another through each one's USDC pool on Aerodrome Slipstream:
-///         stock -> USDC -> stock, in one call. It has no owner, holds nothing between calls and
-///         checks no price; the fund enforces the minimum output against the oracle.
+///         stock -> USDC -> stock, in one call. With USDC on either side it is a single hop
+///         (stock -> USDC for the CHIP burner). It has no owner, holds nothing between calls and
+///         checks no price; the caller enforces its own minimum output.
 /// @dev    Talks to the pools directly (no router), so the only external code it trusts is the pool
 ///         set fixed at deployment. Anyone may call `swap`, but only with tokens they sent in first.
 contract AerodromeSwapper is ISwapper {
@@ -46,6 +47,8 @@ contract AerodromeSwapper is ISwapper {
         external
         returns (uint256 amountOut)
     {
+        if (buy == usdc) return _swap(sell, amountIn, sell, recipient);
+        if (sell == usdc) return _swap(buy, amountIn, usdc, recipient);
         uint256 usdcOut = _swap(sell, amountIn, sell, address(this));
         amountOut = _swap(buy, usdcOut, usdc, recipient);
     }

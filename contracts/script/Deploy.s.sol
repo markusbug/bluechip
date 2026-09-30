@@ -3,61 +3,88 @@ pragma solidity 0.8.30;
 
 import {DeploymentIO} from "./DeploymentIO.sol";
 import {BlueFund} from "../src/BlueFund.sol";
-import {ChipVault} from "../src/ChipVault.sol";
+import {ChipBurner} from "../src/ChipBurner.sol";
+import {ChipSwapper} from "../src/ChipSwapper.sol";
 import {Rebalancer} from "../src/Rebalancer.sol";
 import {AerodromeSwapper} from "../src/AerodromeSwapper.sol";
 import {ISwapper} from "../src/interfaces/ISwapper.sol";
 import {IChip} from "../src/interfaces/IChip.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ICLPool} from "../src/interfaces/ICLPool.sol";
+import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
 
-/// @notice Mainnet deploy: BlueFund over the real stock tokens, ChipVault over the Bankr-launched
-///         CHIP, and the rebalancer trading through the stocks' Aerodrome USDC pools.
+/// @notice Mainnet deploy: BlueFund over the real stock tokens and the rebalancer trading through
+///         the stocks' Aerodrome USDC pools. With CHIP_ADDRESS (and its v4 pool key from
+///         scripts/chip-pool.mjs) it also deploys the CHIP burner as the fee recipient; without it,
+///         mint fees go to FEE_RECIPIENT (default: the owner) until script/DeployBurner.s.sol.
 ///         Never calls the stock tokens (they are chain-native and can't run in forge's simulator),
 ///         so seeding is a separate step: scripts/seed.sh.
 ///
-///   CHIP_ADDRESS=0x... [OWNER=0x...] [UPDATER=0x...] [MINT_FEE_BPS=30] \
-///   [SUPPLY_CAP=1000000000000000000000] \
+///   [CHIP_ADDRESS=0x... CHIP_POOL_FEE=... CHIP_POOL_TICK_SPACING=... CHIP_POOL_HOOKS=0x...] \
+///   [OWNER=0x...] [UPDATER=0x...] [KEEPER=0x...] [MINT_FEE_BPS=30] [SUPPLY_CAP=...] \
 ///   forge script script/Deploy.s.sol --rpc-url base --account deployer --broadcast --verify
 contract Deploy is DeploymentIO {
-    function run() external returns (BlueFund fund, ChipVault vault, Rebalancer rebalancer) {
+    function run() external returns (BlueFund fund, Rebalancer rebalancer, ChipBurner burner) {
         Basket memory b = _readBasket();
-        IChip chip = IChip(vm.envAddress("CHIP_ADDRESS"));
+        address chip = vm.envOr("CHIP_ADDRESS", address(0));
 
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         address owner = vm.envOr("OWNER", deployer);
-        // The fund's fee recipient is the vault and its rebalancer comes last: predict both.
-        uint256 nonce = vm.getNonce(deployer);
-        address predictedVault = vm.computeCreateAddress(deployer, nonce + 1);
-        address predictedRebalancer = vm.computeCreateAddress(deployer, nonce + 3);
-        fund = new BlueFund(
-            "Bluechip Index",
-            "BLUE",
-            b.addresses,
-            b.units,
-            owner,
-            predictedVault,
-            vm.envOr("MINT_FEE_BPS", uint256(30)),
-            vm.envOr("SUPPLY_CAP", uint256(1_000e18)),
-            predictedRebalancer
-        );
-        vault = new ChipVault(IERC20(address(fund)), chip);
+
+        // Swappers first: they don't depend on the fund.
         AerodromeSwapper swapper = new AerodromeSwapper(b.usdc, b.addresses, b.pools);
+        ChipSwapper chipSwapper =
+            chip == address(0) ? ChipSwapper(address(0)) : _deployChipSwapper(b.usdc, chip);
+
+        // Then the fund, its rebalancer and (with CHIP) its burner, whose addresses it needs.
+        fund = _deployFund(b, deployer, owner, chip != address(0));
         rebalancer = _deployRebalancer(fund, swapper, b, owner);
+        if (chip != address(0)) {
+            burner = new ChipBurner(
+                fund,
+                IChip(chip),
+                b.usdc,
+                ISwapper(address(swapper)),
+                ISwapper(address(chipSwapper)),
+                owner,
+                vm.envOr("KEEPER", owner)
+            );
+            require(address(burner) == fund.feeRecipient(), "burner address mismatch");
+        }
         vm.stopBroadcast();
-        require(address(vault) == predictedVault, "vault address mismatch");
-        require(address(rebalancer) == predictedRebalancer, "rebalancer address mismatch");
+        require(address(rebalancer) == fund.rebalancer(), "rebalancer address mismatch");
 
         _writeDeployment(
             address(fund),
-            address(vault),
-            address(chip),
+            address(burner),
+            chip,
             address(rebalancer),
             address(swapper),
             b.addresses,
             b.symbols,
             b.feeds,
             address(0)
+        );
+    }
+
+    /// @dev The rebalancer is the next contract after the fund and the burner the one after that.
+    function _deployFund(Basket memory b, address deployer, address owner, bool withBurner)
+        private
+        returns (BlueFund)
+    {
+        uint256 nonce = vm.getNonce(deployer);
+        address feeRecipient =
+            withBurner ? vm.computeCreateAddress(deployer, nonce + 2) : vm.envOr("FEE_RECIPIENT", owner);
+        return new BlueFund(
+            "Bluechip Index",
+            "BLUE",
+            b.addresses,
+            b.units,
+            owner,
+            feeRecipient,
+            vm.envOr("MINT_FEE_BPS", uint256(30)),
+            vm.envOr("SUPPLY_CAP", uint256(1_000e18)),
+            vm.computeCreateAddress(deployer, nonce + 1)
         );
     }
 
@@ -75,6 +102,19 @@ contract Deploy is DeploymentIO {
             owner,
             vm.envOr("UPDATER", owner),
             _rebalancerParams()
+        );
+    }
+
+    function _deployChipSwapper(address usdc, address chip) internal returns (ChipSwapper) {
+        return new ChipSwapper(
+            usdc,
+            WETH,
+            chip,
+            ICLPool(USDC_WETH_POOL),
+            IPoolManager(POOL_MANAGER),
+            uint24(vm.envUint("CHIP_POOL_FEE")),
+            int24(vm.envInt("CHIP_POOL_TICK_SPACING")),
+            vm.envAddress("CHIP_POOL_HOOKS")
         );
     }
 }

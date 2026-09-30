@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Live end-to-end test on Base Sepolia, with mock stocks, feeds and DEX:
-#   deploy -> mint -> redeem -> CHIP claim -> index timelock -> a rebalancing trade
+#   deploy -> mint -> redeem -> CHIP buy-and-burn -> index timelock -> a rebalancing trade
 #
 # Each run deploys a fresh set (about 60 transactions of testnet gas) and writes
 # contracts/deployments/84532.json, which the site uses with VITE_CHAIN=baseSepolia. The rebalancer
@@ -14,6 +14,7 @@
 #   KEYSTORE=path/to/keystore scripts/testnet.sh   # a keystore file instead of a named account
 #   REUSE=1 scripts/testnet.sh                # skip the deploy, test deployments/<chain>.json
 #   BRAKE=1 scripts/testnet.sh                # also test disableRebalancer (leaves it off)
+#   HANDOVER_KEEPER=0x... scripts/testnet.sh  # afterwards, let that wallet (the GitHub keeper) burn
 #   PRIVATE_KEY=0x... RPC_URL=http://127.0.0.1:8545 scripts/testnet.sh   # local anvil
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -117,7 +118,7 @@ echo "Chain $CHAIN_ID via $RPC, signer $ME ($(cast balance "$ME" --rpc-url "$RPC
 # ---------------------------------------------------------------- deploy
 
 if [[ -z ${REUSE:-} ]]; then
-  step "Deploy mocks, fund, vault and rebalancer"
+  step "Deploy mocks, fund, CHIP burner and rebalancer"
   log=$(mktemp)
   if ! (cd contracts && SKEW_INDEX_BPS=2000 COOLDOWN=300 forge script script/DeployMocks.s.sol \
     --rpc-url "$RPC" "${SIGNER[@]}" --sender "$ME" --broadcast --slow) >"$log" 2>&1; then
@@ -136,7 +137,7 @@ fi
 [[ -f $DEPLOYMENT ]] || { echo "No $DEPLOYMENT. Run without REUSE first." >&2; exit 1; }
 
 FUND=$(jq -r .fund "$DEPLOYMENT")
-VAULT=$(jq -r .vault "$DEPLOYMENT")
+BURNER=$(jq -r .burner "$DEPLOYMENT")
 CHIP=$(jq -r .chip "$DEPLOYMENT")
 REB=$(jq -r .rebalancer "$DEPLOYMENT")
 FAUCET=$(jq -r .faucet "$DEPLOYMENT")
@@ -150,6 +151,8 @@ check "fund's rebalancer is the deployed one" "'$(call "$FUND" "rebalancer()(add
 check "rebalancer points at the fund" "'$(call "$REB" "fund()(address)" | lower)' == '${FUND,,}'"
 check "fund is seeded" "'$(call "$FUND" "seeded()(bool)")' == 'true'"
 check "rebalancer's updater is the signer" "'$(call "$REB" "updater()(address)" | lower)' == '${ME,,}'"
+check "fund's fees go to the CHIP burner" "'$(call "$FUND" "feeRecipient()(address)" | lower)' == '${BURNER,,}'"
+check "burner points at the fund" "'$(call "$BURNER" "fund()(address)" | lower)' == '${FUND,,}'"
 
 # ---------------------------------------------------------------- mint / redeem
 
@@ -162,10 +165,10 @@ done
 to_minter=$(call_n 1 "$FUND" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
 fee=$(call_n 2 "$FUND" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
 blue0=$(call "$FUND" "balanceOf(address)(uint256)" "$ME")
-vault0=$(call "$FUND" "balanceOf(address)(uint256)" "$VAULT")
+fees0=$(call "$FUND" "balanceOf(address)(uint256)" "$BURNER")
 send "$FUND" "mint(uint256,address)" "$ONE" "$ME"
 check "minter gets 1 BLUE minus the fee" "$(call "$FUND" "balanceOf(address)(uint256)" "$ME") == $blue0 + $to_minter"
-check "CHIP vault gets the 0.30% fee" "$(call "$FUND" "balanceOf(address)(uint256)" "$VAULT") == $vault0 + $fee and $fee == $ONE * 30 // 10000"
+check "CHIP burner gets the 0.30% fee" "$(call "$FUND" "balanceOf(address)(uint256)" "$BURNER") == $fees0 + $fee and $fee == $ONE * 30 // 10000"
 
 step "Redeem 0.5 BLUE"
 HALF=500000000000000000
@@ -181,16 +184,16 @@ done
 
 # ---------------------------------------------------------------- CHIP
 
-step "Burn CHIP for vault BLUE"
-send "$CHIP" "faucet()"
-AMOUNT=1000000000000000000000000000 # 1B CHIP, 1% of supply
-expected=$(call "$VAULT" "previewClaim(uint256)(uint256)" "$AMOUNT")
+step "Burn the mint fees into CHIP"
+pending=$(call "$BURNER" "pendingBlue()(uint256)")
+check "fees are waiting in the burner" "$pending > 0"
 supply0=$(call "$CHIP" "totalSupply()(uint256)")
-blue0=$(call "$FUND" "balanceOf(address)(uint256)" "$ME")
-send "$CHIP" "approve(address,uint256)" "$VAULT" "$AMOUNT"
-send "$VAULT" "claim(uint256,uint256,address)" "$AMOUNT" "$expected" "$ME"
-check "claim pays vault BLUE x 1%" "$(call "$FUND" "balanceOf(address)(uint256)" "$ME") == $blue0 + $expected and $expected > 0"
-check "claimed CHIP is burned" "$(call "$CHIP" "totalSupply()(uint256)") == $supply0 - $AMOUNT"
+total0=$(call "$BURNER" "totalBurned()(uint256)")
+send "$BURNER" "burn(uint256,uint256,address[])" "$pending" 0 "[]"
+burned=$(py "$(call "$BURNER" "totalBurned()(uint256)") - $total0")
+check "fees bought CHIP and burned it" "$burned > 0"
+check "CHIP supply fell by exactly that" "$(call "$CHIP" "totalSupply()(uint256)") == $supply0 - $burned"
+check "no fees left waiting" "$(call "$BURNER" "pendingBlue()(uint256)") == 0"
 
 # ---------------------------------------------------------------- index timelock
 
@@ -255,6 +258,14 @@ if [[ -n ${BRAKE:-} ]]; then
   blue0=$(call "$FUND" "balanceOf(address)(uint256)" "$ME")
   send "$FUND" "redeem(uint256,address)" 1000 "$ME"
   check "redeem still works" "$(call "$FUND" "balanceOf(address)(uint256)" "$ME") == $blue0 - 1000"
+fi
+
+# ---------------------------------------------------------------- hand over
+
+if [[ -n ${HANDOVER_KEEPER:-} ]]; then
+  step "Hand the burner to the automation keeper"
+  send "$BURNER" "setKeeper(address)" "$HANDOVER_KEEPER"
+  check "burner keeper is $HANDOVER_KEEPER" "'$(call "$BURNER" "keeper()(address)" | lower)' == '${HANDOVER_KEEPER,,}'"
 fi
 
 # ---------------------------------------------------------------- summary

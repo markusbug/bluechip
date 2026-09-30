@@ -19,6 +19,12 @@ contract MockOracleSwapper is ISwapper {
         slippageBps = slippageBps_;
     }
 
+    function addTokens(address[] memory tokens, address[] memory feeds) external {
+        for (uint256 i; i < tokens.length; ++i) {
+            feedOf[tokens[i]] = feeds[i];
+        }
+    }
+
     function setSlippage(uint256 bps) external {
         slippageBps = bps;
     }

@@ -23,7 +23,18 @@ export const rebalancerAbi = parseAbi([
   "function maxFeedAge() view returns (uint256)",
   "function feeds() view returns (address[])",
 ]);
-export const stockAbi = parseAbi(["function multiplier() view returns (uint256)"]);
+export const stockAbi = parseAbi([
+  "function multiplier() view returns (uint256)",
+  "function decimals() view returns (uint8)",
+]);
+export const fundAbi = parseAbi([
+  "function previewRedeem(uint256 shares) view returns (address[] tokens, uint256[] amounts)",
+]);
+export const burnerAbi = parseAbi([
+  "function burn(uint256 blueAmount, uint256 minChipOut, address[] skip) returns (uint256 burned)",
+  "function pendingBlue() view returns (uint256)",
+  "function keeper() view returns (address)",
+]);
 export const feedAbi = parseAbi([
   "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)",
   "function setPrice(int256 answer)", // MockPriceFeed only
@@ -80,7 +91,7 @@ export function connect(keyVar) {
   const read = (functionName, args = []) =>
     client.readContract({ address: deployment.rebalancer, abi: rebalancerAbi, functionName, args });
 
-  return { chain, client, deployment, dryRun, send, write, read };
+  return { chain, client, deployment, dryRun, account, send, write, read };
 }
 
 export function log(msg) {

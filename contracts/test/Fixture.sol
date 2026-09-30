@@ -3,7 +3,8 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {BlueFund} from "../src/BlueFund.sol";
-import {ChipVault} from "../src/ChipVault.sol";
+import {ChipBurner} from "../src/ChipBurner.sol";
+import {MockChipSwapper} from "../src/mocks/MockChipSwapper.sol";
 import {MockStock} from "../src/mocks/MockStock.sol";
 import {MockChip} from "../src/mocks/MockChip.sol";
 import {IChip} from "../src/interfaces/IChip.sol";
@@ -11,14 +12,16 @@ import {Rebalancer} from "../src/Rebalancer.sol";
 import {MockPriceFeed} from "../src/mocks/MockPriceFeed.sol";
 import {MockOracleSwapper} from "../src/mocks/MockOracleSwapper.sol";
 import {ISwapper} from "../src/interfaces/ISwapper.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @notice Three-stock fund (two 8-decimal tokens like the real B20 stocks, one 18-decimal) + CHIP vault
-///         + rebalancer over mock feeds and an oracle-priced mock DEX. The clock starts on a Wednesday
-///         in the US regular session, and the index matches the seed, so the fund starts balanced.
+/// @notice Three-stock fund (two 8-decimal tokens like the real B20 stocks, one 18-decimal) + CHIP burner
+///         + rebalancer over mock feeds and an oracle-priced mock DEX (which also sells stocks for mock
+///         USDC), and a mock CHIP market at $0.01. The clock starts on a Wednesday in the US regular
+///         session, and the index matches the seed, so the fund starts balanced.
 abstract contract Fixture is Test {
     BlueFund internal fund;
-    ChipVault internal vault;
+    ChipBurner internal burner;
+    MockStock internal usdc;
+    MockChipSwapper internal chipSwapper;
     MockChip internal chip;
     MockStock[] internal stocks;
     address[] internal tokens;
@@ -34,6 +37,7 @@ abstract contract Fixture is Test {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal updater = makeAddr("updater");
+    address internal keeper = makeAddr("keeper");
 
     uint256 internal constant FEE_BPS = 30;
     uint256 internal constant CAP = 1_000_000e18;
@@ -73,17 +77,38 @@ abstract contract Fixture is Test {
             feedAddrs.push(address(feeds[i]));
             decimals[i] = stocks[i].decimals();
         }
-        swapper = new MockOracleSwapper(tokens, feedAddrs, DEX_SLIPPAGE_BPS);
+        // The mock DEX also prices mock USDC at $1, so it can sell stocks for it.
+        usdc = new MockStock("USD Coin", "USDC", 6);
+        address[] memory dexTokens = new address[](stocks.length + 1);
+        address[] memory dexFeeds = new address[](stocks.length + 1);
+        for (uint256 i; i < stocks.length; ++i) {
+            (dexTokens[i], dexFeeds[i]) = (tokens[i], feedAddrs[i]);
+        }
+        (dexTokens[stocks.length], dexFeeds[stocks.length]) = (address(usdc), address(new MockPriceFeed(1e8)));
+        swapper = new MockOracleSwapper(dexTokens, dexFeeds, DEX_SLIPPAGE_BPS);
 
         chip = new MockChip(owner);
-        // Fee recipient is the vault and the rebalancer needs the fund: predict both addresses.
+        // CHIP at $0.01: 1 USDC (1e6) buys 100 CHIP (1e20). The market holds 10B CHIP ($100M).
+        chipSwapper = new MockChipSwapper(address(usdc), address(chip), 1e14);
+        vm.prank(owner);
+        chip.transfer(address(chipSwapper), 10_000_000_000e18);
+
+        // Fee recipient is the burner and the rebalancer needs the fund: predict both addresses.
         uint256 nonce = vm.getNonce(address(this));
-        address predictedVault = vm.computeCreateAddress(address(this), nonce + 1);
+        address predictedBurner = vm.computeCreateAddress(address(this), nonce + 1);
         address predictedRebalancer = vm.computeCreateAddress(address(this), nonce + 2);
         fund = new BlueFund(
-            "Bluechip Index", "BLUE", tokens, units, owner, predictedVault, FEE_BPS, CAP, predictedRebalancer
+            "Bluechip Index", "BLUE", tokens, units, owner, predictedBurner, FEE_BPS, CAP, predictedRebalancer
         );
-        vault = new ChipVault(IERC20(address(fund)), IChip(address(chip)));
+        burner = new ChipBurner(
+            fund,
+            IChip(address(chip)),
+            address(usdc),
+            ISwapper(address(swapper)),
+            ISwapper(address(chipSwapper)),
+            owner,
+            keeper
+        );
         rebalancer = new Rebalancer(
             fund,
             ISwapper(address(swapper)),
@@ -95,7 +120,7 @@ abstract contract Fixture is Test {
             updater,
             _params()
         );
-        assertEq(address(vault), predictedVault);
+        assertEq(address(burner), predictedBurner);
         assertEq(address(rebalancer), predictedRebalancer);
 
         _fundBasket(owner, SEED);

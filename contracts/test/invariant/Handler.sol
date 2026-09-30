@@ -3,21 +3,23 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {BlueFund} from "../../src/BlueFund.sol";
-import {ChipVault} from "../../src/ChipVault.sol";
+import {ChipBurner} from "../../src/ChipBurner.sol";
 import {MockStock} from "../../src/mocks/MockStock.sol";
 import {MockChip} from "../../src/mocks/MockChip.sol";
 import {MockPriceFeed} from "../../src/mocks/MockPriceFeed.sol";
 import {Rebalancer} from "../../src/Rebalancer.sol";
 
-/// @notice Drives random mints, redeems, emergency redeems, donations, fee changes, CHIP claims,
+/// @notice Drives random mints, redeems, emergency redeems, donations, fee changes, CHIP burns,
 ///         price moves, index changes and rebalancing trades.
-///         After every action except a trade it checks that holdings-per-share and backing-per-CHIP
-///         did not drop. A trade may shift holdings between stocks, but must not cost more NAV than
-///         the slippage bound on what it traded.
+///         After every action except a trade it checks that holdings-per-share did not drop. A trade
+///         may shift holdings between stocks, but must not cost more NAV than the slippage bound on
+///         what it traded. A burn must lower CHIP supply by exactly what it burned.
 contract Handler is Test {
     BlueFund internal fund;
-    ChipVault internal vault;
+    ChipBurner internal burner;
     MockChip internal chip;
+    MockStock internal usdc;
+    address internal keeper;
     MockStock[] internal stocks;
     address internal owner;
     address[] internal actors;
@@ -27,14 +29,17 @@ contract Handler is Test {
 
     uint256 public calls;
     uint256 public ratioDrops;
-    uint256 public backingDrops;
+    uint256 public chipLeaks;
+    uint256 public burns;
     uint256 public trades;
     uint256 public navLeaks;
 
     constructor(
         BlueFund fund_,
-        ChipVault vault_,
+        ChipBurner burner_,
         MockChip chip_,
+        MockStock usdc_,
+        address keeper_,
         MockStock[] memory stocks_,
         address owner_,
         Rebalancer rebalancer_,
@@ -42,8 +47,10 @@ contract Handler is Test {
         address updater_
     ) {
         fund = fund_;
-        vault = vault_;
+        burner = burner_;
         chip = chip_;
+        usdc = usdc_;
+        keeper = keeper_;
         stocks = stocks_;
         owner = owner_;
         rebalancer = rebalancer_;
@@ -52,8 +59,6 @@ contract Handler is Test {
         for (uint256 i; i < 4; ++i) {
             address a = makeAddr(string.concat("actor", vm.toString(i)));
             actors.push(a);
-            vm.prank(owner);
-            chip.transfer(a, 5_000_000_000e18);
         }
     }
 
@@ -104,20 +109,18 @@ contract Handler is Test {
         fund.setMintFee(bps);
     }
 
-    function claim(uint256 actorSeed, uint256 amount) external checked {
-        address a = _actor(actorSeed);
-        uint256 bal = chip.balanceOf(a);
-        if (bal == 0) return;
-        amount = bound(amount, 1, bal);
-        if (vault.previewClaim(amount) == 0) return;
-        vm.startPrank(a);
-        chip.approve(address(vault), amount);
-        vault.claim(amount, 0, a);
-        vm.stopPrank();
+    function burn(uint256 amount) external checked {
+        uint256 pending = burner.pendingBlue();
+        if (pending == 0) return;
+        amount = bound(amount, 1, pending);
+        uint256 supply = chip.totalSupply();
+        vm.prank(keeper);
+        uint256 burned = burner.burn(amount, 0, new address[](0));
+        burns++;
+        if (chip.totalSupply() != supply - burned) chipLeaks++;
     }
 
-    function redeemVaultShares(uint256 actorSeed) external checked {
-        // Claimed BLUE is ordinary BLUE: it can be redeemed for the basket.
+    function redeemAll(uint256 actorSeed) external checked {
         address a = _actor(actorSeed);
         uint256 bal = fund.balanceOf(a);
         if (bal == 0) return;
@@ -190,8 +193,6 @@ contract Handler is Test {
             h[i] = fund.holdings(address(stocks[i]));
         }
         uint256 s = fund.totalSupply();
-        uint256 b = vault.totalBacking();
-        uint256 cs = chip.totalSupply();
 
         _;
 
@@ -200,8 +201,6 @@ contract Handler is Test {
         for (uint256 i; i < n; ++i) {
             if (fund.holdings(address(stocks[i])) * s < h[i] * s2) ratioDrops++;
         }
-        // The only way BLUE leaves the vault is a claim, which also burns CHIP.
-        if (vault.totalBacking() * cs < b * chip.totalSupply()) backingDrops++;
     }
 
     function _actor(uint256 seed) internal view returns (address) {

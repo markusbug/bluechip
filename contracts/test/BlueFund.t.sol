@@ -51,7 +51,7 @@ contract BlueFundTest is Fixture {
         assertEq(fund.symbol(), "BLUE");
         assertEq(fund.decimals(), 18);
         assertEq(fund.owner(), owner);
-        assertEq(fund.feeRecipient(), address(vault));
+        assertEq(fund.feeRecipient(), address(burner));
         assertEq(fund.mintFeeBps(), FEE_BPS);
         assertEq(fund.supplyCap(), CAP);
         assertEq(fund.constituents(), tokens);
@@ -124,7 +124,7 @@ contract BlueFundTest is Fixture {
 
         uint256 fee = shares * FEE_BPS / 10_000;
         assertEq(fund.balanceOf(alice), shares - fee);
-        assertEq(fund.balanceOf(address(vault)), fee);
+        assertEq(fund.balanceOf(address(burner)), fee);
         assertEq(fund.totalSupply(), SEED + shares);
         (uint256 toMinter, uint256 f) = fund.previewMintFee(shares);
         assertEq(toMinter, shares - fee);
@@ -146,7 +146,7 @@ contract BlueFundTest is Fixture {
         fund.setMintFee(0);
         _mintAs(alice, 1e18);
         assertEq(fund.balanceOf(alice), 1e18);
-        assertEq(fund.balanceOf(address(vault)), 0);
+        assertEq(fund.balanceOf(address(burner)), 0);
     }
 
     function test_mint_roundsUpForDust() public {
@@ -227,13 +227,13 @@ contract BlueFundTest is Fixture {
         _mintAs(alice, 2e18);
         uint256 a = fund.balanceOf(alice);
         uint256 o = fund.balanceOf(owner);
-        uint256 v = fund.balanceOf(address(vault));
+        uint256 v = fund.balanceOf(address(burner));
         vm.prank(alice);
         fund.redeem(a, alice);
         vm.prank(owner);
         fund.redeem(o, owner);
-        vm.prank(address(vault));
-        fund.redeem(v, address(vault));
+        vm.prank(address(burner));
+        fund.redeem(v, address(burner));
 
         assertEq(fund.totalSupply(), fund.DEAD_SHARES());
         for (uint256 i; i < tokens.length; ++i) {

@@ -1,7 +1,7 @@
 import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi, parseAbi } from "viem";
-import { blueFundAbi, chipVaultAbi } from "../abi";
+import { blueFundAbi, chipBurnerAbi } from "../abi";
 import { basket, deployment, siteConfig, stockMeta } from "../config";
 
 const feedAbi = parseAbi([
@@ -38,7 +38,10 @@ export type FundState = {
   mintFeeBps: number;
   navPerBlue: number | undefined;
   aum: number | undefined;
-  vaultBacking: bigint;
+  /** Fee BLUE waiting in the CHIP burner. */
+  pendingFees: bigint;
+  /** CHIP the burner has bought and burned so far. */
+  chipBurned: bigint;
   chipSupply: bigint;
   isLoading: boolean;
   refetch: () => void;
@@ -55,6 +58,9 @@ export function useFund(): FundState {
   const n = d?.tokens.length ?? 0;
   const fund = d ? { address: d.fund, abi: blueFundAbi } : undefined;
   const hasFeeds = !!d && d.feeds.length === n && n > 0;
+  // A fund can go live before CHIP: then there is no burner yet and these reads come back empty.
+  const burner = (d?.burner ?? "0x0000000000000000000000000000000000000000") as Address;
+  const hasBurner = !/^0x0+$/.test(burner);
 
   const contracts = d
     ? [
@@ -63,8 +69,9 @@ export function useFund(): FundState {
         { ...fund!, functionName: "mintFeeBps" },
         { ...fund!, functionName: "seeded" },
         { ...fund!, functionName: "unitsPerShare" },
-        { address: d.vault, abi: chipVaultAbi, functionName: "totalBacking" },
+        { ...fund!, functionName: "balanceOf", args: [burner] },
         { address: siteConfig.chipAddress ?? d.chip, abi: erc20Abi, functionName: "totalSupply" },
+        { address: burner, abi: chipBurnerAbi, functionName: "totalBurned" },
         ...d.tokens.map((t) => ({ ...fund!, functionName: "holdings", args: [t] })),
         ...d.tokens.map((t) => ({ address: t, abi: erc20Abi, functionName: "decimals" })),
         ...d.tokens.map((t) => ({ address: t, abi: multiplierAbi, functionName: "multiplier" })),
@@ -109,7 +116,8 @@ export function useFund(): FundState {
       mintFeeBps: 30,
       navPerBlue: nav,
       aum: undefined,
-      vaultBacking: 0n,
+      pendingFees: 0n,
+      chipBurned: 0n,
       chipSupply: 0n,
       isLoading: false,
       refetch: () => {},
@@ -118,7 +126,7 @@ export function useFund(): FundState {
 
   const totalSupply = ok<bigint>(0, 0n);
   const units = ok<readonly [readonly Address[], readonly bigint[]]>(4, [[], []])[1];
-  const base = 7;
+  const base = 8;
   const constituents: Constituent[] = d.tokens.map((address, i) => {
     const symbol = d.symbols[i];
     const decimals = ok<number>(base + n + i, 8);
@@ -149,8 +157,9 @@ export function useFund(): FundState {
     mintFeeBps: Number(ok<number | bigint>(2, 0)),
     navPerBlue,
     aum: navPerBlue === undefined ? undefined : navPerBlue * (Number(totalSupply) / 1e18),
-    vaultBacking: ok<bigint>(5, 0n),
+    pendingFees: hasBurner ? ok<bigint>(5, 0n) : 0n,
     chipSupply: ok<bigint>(6, 0n),
+    chipBurned: hasBurner ? ok<bigint>(7, 0n) : 0n,
     isLoading: q.isLoading,
     refetch: () => void q.refetch(),
   };

@@ -8,6 +8,12 @@ import {Rebalancer} from "../src/Rebalancer.sol";
 abstract contract DeploymentIO is Script {
     string internal constant BASKET = "basket/mag7.json";
 
+    // Base mainnet. WETH and the Uniswap v4 PoolManager are fixed; the pool is Aerodrome
+    // Slipstream's deepest USDC/WETH pool.
+    address internal constant WETH = 0x4200000000000000000000000000000000000006;
+    address internal constant USDC_WETH_POOL = 0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59;
+    address internal constant POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
+
     struct Basket {
         string[] symbols;
         address[] addresses;
@@ -54,9 +60,13 @@ abstract contract DeploymentIO is Script {
         });
     }
 
+    function _deploymentPath() internal view returns (string memory) {
+        return string.concat("deployments/", vm.toString(block.chainid), ".json");
+    }
+
     function _writeDeployment(
         address fund,
-        address vault,
+        address burner,
         address chip,
         address rebalancer,
         address swapper,
@@ -71,7 +81,7 @@ abstract contract DeploymentIO is Script {
         vm.serializeUint(k, "startBlock", block.number);
         vm.serializeBool(k, "mock", mock);
         vm.serializeAddress(k, "fund", fund);
-        vm.serializeAddress(k, "vault", vault);
+        vm.serializeAddress(k, "burner", burner);
         vm.serializeAddress(k, "chip", chip);
         vm.serializeAddress(k, "rebalancer", rebalancer);
         vm.serializeAddress(k, "swapper", swapper);
@@ -79,7 +89,6 @@ abstract contract DeploymentIO is Script {
         vm.serializeAddress(k, "feeds", feeds);
         if (mock) vm.serializeAddress(k, "faucet", faucet);
         string memory out = vm.serializeString(k, "symbols", symbols);
-        string memory path = string.concat("deployments/", vm.toString(block.chainid), ".json");
-        vm.writeJson(out, path);
+        vm.writeJson(out, _deploymentPath());
     }
 }
