@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatUnits } from "viem";
+import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import { compactUsd, pct, usd } from "../lib/format";
 import { PokerChip } from "./PokerChip";
@@ -67,7 +68,9 @@ export function Hero({ fund }: { fund: FundState }) {
 }
 
 function priceNote(fund: FundState) {
-  if (!fund.constituents.every((c) => c.priceIsLive)) return "Snapshot prices, test network";
+  if (!fund.constituents.every((c) => c.priceIsLive)) {
+    return siteConfig.isMainnet ? "Snapshot prices, loading live ones" : "Snapshot prices, test network";
+  }
   const oldest = Math.min(...fund.constituents.map((c) => c.priceUpdatedAt ?? 0));
   const mins = Math.round((Date.now() / 1000 - oldest) / 60);
   return mins < 90 ? "Live Chainlink prices" : "Last Chainlink price, market closed";
