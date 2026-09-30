@@ -1,0 +1,41 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.30"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 10_000
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+fs_permissions = [
+  { access = "read", path = "./basket" },
+  { access = "read-write", path = "./deployments" },
+]
+
+[fuzz]
+runs = 1024
+
+[invariant]
+runs = 256
+depth = 64
+fail_on_revert = true
+
+[profile.ci.fuzz]
+runs = 10_000
+
+[profile.ci.invariant]
+runs = 1024
+depth = 128
+
+# Public endpoints; pass --rpc-url <your provider> for anything heavier than a deploy.
+# Verify with: --verify --etherscan-api-key $ETHERSCAN_API_KEY (Etherscan v2 key covers Base).
+[rpc_endpoints]
+base = "https://mainnet.base.org"
+base_sepolia = "https://sepolia.base.org"
+localhost = "http://127.0.0.1:8545"
+
+[fmt]
+line_length = 110

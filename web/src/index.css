@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Palette: Base blue on cool paper, navy ink. Dark mode flips paper and ink, keeps the blue. */
+:root {
+  --paper: #f3f6fd;
+  --surface: #ffffff;
+  --ink: #0b1a3a;
+  --muted: #56627e;
+  --line: #d6def0;
+  --blue: #0052ff;
+  --blue-deep: #0a2a8f;
+  --blue-soft: #e3ebff;
+  --good: #0e7c55;
+  --warn: #a2461a;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #06102a;
+    --surface: #0c1838;
+    --ink: #e7edff;
+    --muted: #93a0c0;
+    --line: #1e2c55;
+    --blue: #3d7bff;
+    --blue-deep: #0a1f66;
+    --blue-soft: #122453;
+    --good: #4fd1a0;
+    --warn: #f0a070;
+    color-scheme: dark;
+  }
+}
+
+@theme {
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Unbounded", "Schibsted Grotesk", ui-sans-serif, sans-serif;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-blue: var(--blue);
+  --color-blue-deep: var(--blue-deep);
+  --color-blue-soft: var(--blue-soft);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* The one orchestrated motion: the chip rolls in once. */
+@keyframes chip-in {
+  from {
+    transform: rotate(-120deg) scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+.chip-in {
+  animation: chip-in 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .chip-in {
+    animation: none;
+  }
+}

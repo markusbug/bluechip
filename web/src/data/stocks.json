@@ -1,0 +1,58 @@
+{
+  "NVDAc": {
+    "ticker": "NVDA",
+    "name": "NVIDIA Corporation",
+    "icon": "/icons/NVDA.png",
+    "isin": "US67066G1040",
+    "feed": "0x04689a41629776563E6822F76f2e57D148d28513",
+    "mainnetAddress": "0xb20000000000000000000078ee7ce2fE4908108C"
+  },
+  "AAPLc": {
+    "ticker": "AAPL",
+    "name": "Apple Inc.",
+    "icon": "/icons/AAPL.png",
+    "isin": "US0378331005",
+    "feed": "0x787f13dEa48Db0897CbCDD985de77809D837F988",
+    "mainnetAddress": "0xb200000000000000000000C2e324d24d7eEcd1fb"
+  },
+  "MSFTc": {
+    "ticker": "MSFT",
+    "name": "Microsoft Corporation",
+    "icon": "/icons/MSFT.png",
+    "isin": "US5949181045",
+    "feed": "0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c",
+    "mainnetAddress": "0xB200000000000000000000Ab99cFa739E253872B"
+  },
+  "GOOGLc": {
+    "ticker": "GOOGL",
+    "name": "Alphabet Inc.",
+    "icon": "/icons/GOOGL.png",
+    "isin": "US02079K3059",
+    "feed": "0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2",
+    "mainnetAddress": "0xb2000000000000000000002D0BA3164cc74f58B7"
+  },
+  "AMZNc": {
+    "ticker": "AMZN",
+    "name": "Amazon.com Inc.",
+    "icon": "/icons/AMZN.png",
+    "isin": "US0231351067",
+    "feed": "0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295",
+    "mainnetAddress": "0xb200000000000000000000d9192b6B456483C2E8"
+  },
+  "METAc": {
+    "ticker": "META",
+    "name": "Meta Platforms Inc.",
+    "icon": "/icons/META.png",
+    "isin": "US30303M1027",
+    "feed": "0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D",
+    "mainnetAddress": "0xb2000000000000000000008bC8786B856E61707C"
+  },
+  "TSLAc": {
+    "ticker": "TSLA",
+    "name": "Tesla Inc.",
+    "icon": "/icons/TSLA.png",
+    "isin": "US88160R1014",
+    "feed": "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
+    "mainnetAddress": "0xb2000000000000000000001e800a7f5189430cD0"
+  }
+}

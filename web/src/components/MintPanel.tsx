@@ -1,0 +1,193 @@
+import { useMemo, useState } from "react";
+import { useReadContract } from "wagmi";
+import type { Address } from "viem";
+import { erc20Abi, maxUint256 } from "viem";
+import { blueFundAbi, mockFaucetAbi } from "../abi";
+import { deployment, siteConfig } from "../config";
+import type { FundState } from "../hooks/useFund";
+import type { WalletState } from "../hooks/useWallet";
+import { explainError } from "../lib/errors";
+import { fmt, parseAmount, usd } from "../lib/format";
+import { NO_PERMIT, permitDeadline, permitDomain, signPermit, type SignedPermit } from "../lib/permit";
+import { canBatch, runCalls, type Call } from "../lib/tx";
+import { AmountInput, Button, LinkButton, TokenIcon, TxStatus } from "./ui";
+
+/** Deposits round up by at most a few units if someone mints first; approve 0.1% more so that can't fail. */
+const withHeadroom = (x: bigint) => x + x / 1000n + 1n;
+
+export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: WalletState; onDone: () => void }) {
+  const [amount, setAmount] = useState("1");
+  const [exact, setExact] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [hash, setHash] = useState<string>();
+
+  const d = deployment!;
+  const shares = parseAmount(amount, 18);
+  const preview = useReadContract({
+    address: d.fund,
+    abi: blueFundAbi,
+    functionName: "previewMint",
+    args: [shares ?? 0n],
+    query: { enabled: !!shares && shares > 0n, refetchInterval: 15_000 },
+  });
+  const need = preview.data?.[1] ?? [];
+
+  const rows = fund.constituents.map((c, i) => {
+    const req = need[i] ?? 0n;
+    const have = wallet.balances[i] ?? 0n;
+    return { c, req, have, short: req > have ? req - have : 0n, approved: (wallet.allowances[i] ?? 0n) >= withHeadroom(req) };
+  });
+  const missing = rows.filter((r) => r.short > 0n);
+  const toApprove = rows.map((r, i) => ({ ...r, i })).filter((r) => r.req > 0n && !r.approved);
+  const fee = shares ? (shares * BigInt(fund.mintFeeBps)) / 10_000n : 0n;
+  const overCap = !!shares && fund.totalSupply + shares > fund.supplyCap;
+  const value = shares && fund.navPerBlue ? (Number(shares) / 1e18) * fund.navPerBlue : undefined;
+
+  const plan = useMemo(() => {
+    if (toApprove.length === 0) return "Mint";
+    return `Approve ${toApprove.length} ${toApprove.length === 1 ? "stock" : "stocks"} and mint`;
+  }, [toApprove.length]);
+
+  async function mint() {
+    const account = wallet.address!;
+    setBusy(true);
+    setError(undefined);
+    setHash(undefined);
+    try {
+      const approveValue = (req: bigint) => (exact ? withHeadroom(req) : maxUint256);
+      const mintCall: Call = { address: d.fund, abi: blueFundAbi, functionName: "mint", args: [shares!, account], label: "Mint" };
+      let tx: string;
+
+      if (toApprove.length === 0 || (await canBatch(account))) {
+        // Nothing to approve, or a smart wallet that runs approvals and the mint as one batch.
+        const approvals: Call[] = toApprove.map((r) => ({
+          address: r.c.address,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [d.fund, approveValue(r.req)],
+          label: `Approve ${r.c.ticker}`,
+        }));
+        tx = await runCalls(account, [...approvals, mintCall], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
+      } else {
+        // Plain EOA (MetaMask, Rabby): gasless permit signatures, then a single transaction.
+        const permits: SignedPermit[] = fund.constituents.map(() => NO_PERMIT);
+        const fallback: Call[] = [];
+        for (const [k, r] of toApprove.entries()) {
+          setMessage(`Sign ${k + 1} of ${toApprove.length}: allow the fund to take ${r.c.ticker} (no gas)`);
+          const domain = await permitDomain(r.c.address);
+          if (!domain) {
+            fallback.push({ address: r.c.address, abi: erc20Abi, functionName: "approve", args: [d.fund, approveValue(r.req)], label: `Approve ${r.c.ticker}` });
+            continue;
+          }
+          permits[r.i] = await signPermit({ token: r.c.address, domain, owner: account, spender: d.fund, value: approveValue(r.req), deadline: permitDeadline() });
+        }
+        const mintWithPermits: Call = {
+          address: d.fund,
+          abi: blueFundAbi,
+          functionName: "mintWithPermits",
+          args: [shares!, account, permits],
+          label: "Mint",
+        };
+        tx = await runCalls(account, [...fallback, mintWithPermits], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
+      }
+      setHash(tx);
+      setMessage(`Minted ${fmt(shares! - fee, 18)} BLUE.`);
+      onDone();
+    } catch (e) {
+      setMessage(undefined);
+      setError(explainError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function faucet() {
+    const account = wallet.address!;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const tx = await runCalls(
+        account,
+        [{ address: d.faucet as Address, abi: mockFaucetAbi, functionName: "drip", args: [account, withHeadroom(shares!)], label: "Get test stocks" }],
+        (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)),
+      );
+      setHash(tx);
+      setMessage("Test stocks received.");
+      onDone();
+    } catch (e) {
+      setMessage(undefined);
+      setError(explainError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const connected = !!wallet.address && wallet.onChain;
+  const disabled = !connected || busy || !shares || shares === 0n || !fund.seeded || overCap || missing.length > 0 || !preview.data;
+
+  return (
+    <div>
+      <AmountInput label="BLUE to mint" value={amount} onChange={setAmount} unit="BLUE" />
+      <p className="mt-2 text-sm text-muted">
+        {value !== undefined && `Worth about ${usd(value)}. `}
+        You receive {shares ? fmt(shares - fee, 18) : "0"} BLUE; {fmt(fee, 18)} BLUE ({(fund.mintFeeBps / 100).toFixed(2)}%) goes to
+        the $CHIP vault.
+      </p>
+
+      <h3 className="mt-6 text-sm font-semibold">You deposit</h3>
+      <ul className="mt-2 divide-y divide-line">
+        {rows.map(({ c, req, have, short }) => (
+          <li key={c.symbol} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm">
+            <TokenIcon icon={c.icon} ticker={c.ticker} size={24} />
+            <span className="w-14 font-semibold">{c.ticker}</span>
+            <span className="grow">{fmt(req, c.decimals, 6)}</span>
+            {connected &&
+              (short > 0n ? (
+                siteConfig.isMainnet ? (
+                  <LinkButton href={siteConfig.bankrTrade(c.address)}>Buy {fmt(short, c.decimals, 6)} on Bankr</LinkButton>
+                ) : (
+                  <span className="text-warn">Need {fmt(short, c.decimals, 6)} more</span>
+                )
+              ) : (
+                <span className="text-muted">You have {fmt(have, c.decimals, 4)}</span>
+              ))}
+          </li>
+        ))}
+      </ul>
+
+      {connected && missing.length > 0 && d.faucet && (
+        <Button variant="outline" className="mt-4" onClick={faucet} disabled={busy || !shares}>
+          Get test stocks for this mint
+        </Button>
+      )}
+
+      {toApprove.length > 0 && connected && (
+        <label className="mt-5 flex items-start gap-2 text-sm text-muted">
+          <input type="checkbox" className="mt-1 accent-[var(--blue)]" checked={exact} onChange={(e) => setExact(e.target.checked)} />
+          <span>
+            Approve only this mint&apos;s amounts. Leave it off to approve once and mint later in a single transaction. The fund
+            can only take tokens when you call mint.
+          </span>
+        </label>
+      )}
+
+      <Button size="lg" className="mt-6 w-full" disabled={disabled} onClick={mint}>
+        {!connected ? "Connect a wallet to mint" : overCap ? "Above the supply cap" : missing.length > 0 ? `Missing ${missing.length} of ${rows.length} stocks` : plan}
+      </Button>
+      {connected && toApprove.length > 0 && missing.length === 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Browser wallets sign {toApprove.length} gasless {toApprove.length === 1 ? "permit" : "permits"}, then send one transaction. Smart
+          wallets do it all in one batch.
+        </p>
+      )}
+      <TxStatus busy={busy} message={message} error={error} hash={hash} explorerTx={siteConfig.explorerTx} />
+    </div>
+  );
+}
+
+export function progressText(label: string, step: number, total: number, stage: "sign" | "wallet" | "pending") {
+  const n = total > 1 ? ` (${step} of ${total})` : "";
+  return stage === "pending" ? `${label}${n}: waiting for the transaction` : `${label}${n}: confirm in your wallet`;
+}
