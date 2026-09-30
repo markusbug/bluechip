@@ -76,6 +76,7 @@ export function useFund(): FundState {
         ...d.tokens.map((t) => ({ address: t, abi: erc20Abi, functionName: "decimals" })),
         ...d.tokens.map((t) => ({ address: t, abi: multiplierAbi, functionName: "multiplier" })),
         ...(hasFeeds ? d.feeds.map((f) => ({ address: f, abi: feedAbi, functionName: "latestRoundData" })) : []),
+        { ...fund!, functionName: "seedUnits" },
       ]
     : siteConfig.isMainnet
       ? basket.tokens.map((t) => ({ address: t.feed as Address, abi: feedAbi, functionName: "latestRoundData" }))
@@ -125,8 +126,11 @@ export function useFund(): FundState {
   }
 
   const totalSupply = ok<bigint>(0, 0n);
-  const units = ok<readonly [readonly Address[], readonly bigint[]]>(4, [[], []])[1];
   const base = 8;
+  // Before the first mint the fund holds nothing and unitsPerShare is all zeros: show the fixed
+  // seed ratio the first mint will deposit instead.
+  const seedUnits = ok<readonly bigint[]>(base + 3 * n + (hasFeeds ? n : 0), []);
+  const units = totalSupply === 0n ? seedUnits : ok<readonly [readonly Address[], readonly bigint[]]>(4, [[], []])[1];
   const constituents: Constituent[] = d.tokens.map((address, i) => {
     const symbol = d.symbols[i];
     const decimals = ok<number>(base + n + i, 8);
@@ -170,6 +174,7 @@ function navAndWeights(constituents: Constituent[]): number | undefined {
   const values = constituents.map((c) => (c.price === undefined ? undefined : (Number(c.unitsPerBlue) / 10 ** c.decimals) * c.price));
   if (!values.every((v) => v !== undefined)) return undefined;
   const nav = values.reduce((s, v) => s + v!, 0);
+  if (!(nav > 0)) return undefined;
   constituents.forEach((c, i) => (c.weight = values[i]! / nav));
   return nav;
 }
