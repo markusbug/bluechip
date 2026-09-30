@@ -11,6 +11,7 @@ import { fmt, parseAmount, usd } from "../lib/format";
 import { NO_PERMIT, permitDeadline, permitDomain, signPermit, type SignedPermit } from "../lib/permit";
 import { canBatch, runCalls, type Call } from "../lib/tx";
 import { AmountInput, Button, LinkButton, TokenIcon, TxStatus } from "./ui";
+import { ZapMint, type PayToken } from "./ZapMint";
 
 /** Deposits round up by at most a few units if someone mints first; approve 0.1% more so that can't fail. */
 const withHeadroom = (x: bigint) => x + x / 1000n + 1n;
@@ -24,6 +25,8 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
   const [hash, setHash] = useState<string>();
 
   const d = deployment!;
+  const hasZap = !!d.zap && !!d.usdc;
+  const [pay, setPay] = useState<PayToken | "stocks">(hasZap ? "usdc" : "stocks");
   const shares = parseAmount(amount, 18);
   const preview = useReadContract({
     address: d.fund,
@@ -136,53 +139,85 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
         buying and burning $CHIP.
       </p>
 
-      <h3 className="mt-6 text-sm font-semibold">You deposit</h3>
-      <ul className="mt-2 divide-y divide-line">
-        {rows.map(({ c, req, have, short }) => (
-          <li key={c.symbol} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm">
-            <TokenIcon icon={c.icon} ticker={c.ticker} size={24} />
-            <span className="w-14 font-semibold">{c.ticker}</span>
-            <span className="grow">{fmt(req, c.decimals, 6)}</span>
-            {connected &&
-              (short > 0n ? (
-                siteConfig.isMainnet ? (
-                  <LinkButton href={siteConfig.bankrTrade(c.address)}>Buy {fmt(short, c.decimals, 6)} on Bankr</LinkButton>
-                ) : (
-                  <span className="text-warn">Need {fmt(short, c.decimals, 6)} more</span>
-                )
-              ) : (
-                <span className="text-muted">You have {fmt(have, c.decimals, 4)}</span>
-              ))}
-          </li>
-        ))}
-      </ul>
-
-      {connected && missing.length > 0 && d.faucet && (
-        <Button variant="outline" className="mt-4" onClick={faucet} disabled={busy || !shares}>
-          Get test stocks for this mint
-        </Button>
+      {hasZap && (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold">Pay with</span>
+          <div role="radiogroup" className="inline-flex rounded-full border border-line p-1">
+            {(
+              [
+                ["usdc", "USDC"],
+                ["eth", "ETH"],
+                ["stocks", "The 7 stocks"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={pay === k}
+                onClick={() => setPay(k)}
+                className={`h-8 rounded-full px-4 text-sm font-semibold transition ${pay === k ? "bg-blue text-white" : "text-muted hover:text-ink"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
-      {toApprove.length > 0 && connected && (
-        <label className="mt-5 flex items-start gap-2 text-sm text-muted">
-          <input type="checkbox" className="mt-1 accent-[var(--blue)]" checked={exact} onChange={(e) => setExact(e.target.checked)} />
-          <span>
-            Approve only this mint&apos;s amounts. Leave it off to approve once and mint later in a single transaction. The fund
-            can only take tokens when you call mint.
-          </span>
-        </label>
-      )}
+      {pay !== "stocks" ? (
+        <ZapMint pay={pay} shares={shares} received={shares ? shares - fee : 0n} value={value} overCap={overCap} wallet={wallet} onDone={onDone} />
+      ) : (
+        <>
+          <h3 className="mt-6 text-sm font-semibold">You deposit</h3>
+          <ul className="mt-2 divide-y divide-line">
+            {rows.map(({ c, req, have, short }) => (
+              <li key={c.symbol} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm">
+                <TokenIcon icon={c.icon} ticker={c.ticker} size={24} />
+                <span className="w-14 font-semibold">{c.ticker}</span>
+                <span className="grow">{fmt(req, c.decimals, 6)}</span>
+                {connected &&
+                  (short > 0n ? (
+                    siteConfig.isMainnet ? (
+                      <LinkButton href={siteConfig.bankrTrade(c.address)}>Buy {fmt(short, c.decimals, 6)} on Bankr</LinkButton>
+                    ) : (
+                      <span className="text-warn">Need {fmt(short, c.decimals, 6)} more</span>
+                    )
+                  ) : (
+                    <span className="text-muted">You have {fmt(have, c.decimals, 4)}</span>
+                  ))}
+              </li>
+            ))}
+          </ul>
 
-      <Button size="lg" className="mt-6 w-full" disabled={disabled} onClick={mint}>
-        {!connected ? "Connect a wallet to mint" : overCap ? "Above the supply cap" : missing.length > 0 ? `Missing ${missing.length} of ${rows.length} stocks` : plan}
-      </Button>
-      {connected && toApprove.length > 0 && missing.length === 0 && (
-        <p className="mt-2 text-xs text-muted">
-          Browser wallets sign {toApprove.length} gasless {toApprove.length === 1 ? "permit" : "permits"}, then send one transaction. Smart
-          wallets do it all in one batch.
-        </p>
+          {connected && missing.length > 0 && d.faucet && (
+            <Button variant="outline" className="mt-4" onClick={faucet} disabled={busy || !shares}>
+              Get test stocks for this mint
+            </Button>
+          )}
+
+          {toApprove.length > 0 && connected && (
+            <label className="mt-5 flex items-start gap-2 text-sm text-muted">
+              <input type="checkbox" className="mt-1 accent-[var(--blue)]" checked={exact} onChange={(e) => setExact(e.target.checked)} />
+              <span>
+                Approve only this mint&apos;s amounts. Leave it off to approve once and mint later in a single transaction. The fund
+                can only take tokens when you call mint.
+              </span>
+            </label>
+          )}
+
+          <Button size="lg" className="mt-6 w-full" disabled={disabled} onClick={mint}>
+            {!connected ? "Connect a wallet to mint" : overCap ? "Above the supply cap" : missing.length > 0 ? `Missing ${missing.length} of ${rows.length} stocks` : plan}
+          </Button>
+          {connected && toApprove.length > 0 && missing.length === 0 && (
+            <p className="mt-2 text-xs text-muted">
+              Browser wallets sign {toApprove.length} gasless {toApprove.length === 1 ? "permit" : "permits"}, then send one transaction. Smart
+              wallets do it all in one batch.
+            </p>
+          )}
+          <TxStatus busy={busy} message={message} error={error} hash={hash} explorerTx={siteConfig.explorerTx} />
+        </>
       )}
-      <TxStatus busy={busy} message={message} error={error} hash={hash} explorerTx={siteConfig.explorerTx} />
     </div>
   );
 }

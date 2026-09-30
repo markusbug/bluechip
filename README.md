@@ -32,6 +32,7 @@ Put the two together and you get **BLUE + CHIP**.
 - **`$CHIP`** is a standard Bankr/Doppler token (100B supply, `burn`, `permit`) trading in a Uniswap v4 pool against WETH. The fund's mint fee goes to `ChipBurner`, which redeems the BLUE for the stocks, sells them for USDC (Aerodrome), swaps to WETH and buys CHIP in its v4 pool (`ChipSwapper`), then burns it. Only the burner's keeper can start a burn, because it sets the minimum CHIP out: CHIP has no price feed, so an open trigger could be sandwiched. The keeper can get a bad price on a burn, but nothing it does sends the fees anywhere but into burned CHIP.
 - **Admin** is `Ownable2Step`. On the fund it sets the mint fee (hard-capped at 1%), the supply cap (0 pauses minting) and the fee recipient. It can also replace the rebalancer, which takes 7 days so holders can redeem first, or switch rebalancing off at once. It can never move holdings out itself.
 - **Frozen stock?** `redeemExcept` lets you leave a paused constituent behind and still exit with the rest.
+- **Mint with USDC or ETH.** `MintZap` buys exactly the stocks a mint deposits, with exact-output swaps in each stock's Aerodrome USDC pool, and mints in the same transaction. The buyer sets the most they'll pay, and the site quotes it from `quoteMint` and shows the price against the fund's Chainlink value. USDC goes from the buyer straight to the pools (approve or one USDC permit). ETH buys its USDC in the USDC/WETH pool inside each stock swap, and whatever isn't spent is refunded. The zap has no owner and holds nothing between calls.
 - **Browser wallets** (MetaMask, Rabby) mint with one gasless permit per stock plus a single `mintWithPermits` transaction. Smart wallets (Base Account, Ambire) batch approvals and the mint atomically (EIP-5792). After the first mint it's one click.
 
 ## Staying on the index
@@ -55,12 +56,15 @@ contracts/                Foundry
   src/ChipSwapper.sol     USDC -> WETH (Aerodrome) -> CHIP (its Uniswap v4 pool), no router
   src/Rebalancer.sol      the index (float shares, 7-day updates) and permissionless rebalance
   src/AerodromeSwapper.sol  stock -> USDC -> stock through Aerodrome Slipstream pools
+  src/MintZap.sol         mint with USDC or ETH: buys the exact basket (exact-output swaps), then mints
   src/mocks/              MockStock, MockChip (mimics the Bankr token), MockBasketFaucet,
                           MockPriceFeed, MockOracleSwapper (a DEX at feed prices),
-                          MockChipSwapper (a CHIP market at a fixed price)
-  test/                   unit, fuzz and invariant tests (83 tests; 100% line coverage on src)
-  script/Deploy.s.sol     mainnet: fund + swapper + rebalancer (+ CHIP burner once CHIP exists)
+                          MockChipSwapper (a CHIP market at a fixed price),
+                          MockOraclePool (a Slipstream-shaped pool at feed prices), MockWETH
+  test/                   unit, fuzz and invariant tests (113 tests; 99.8% line coverage on src)
+  script/Deploy.s.sol     mainnet: fund + swapper + rebalancer + zap (+ CHIP burner once CHIP exists)
   script/DeployBurner.s.sol  adds the CHIP burner to a fund deployed before CHIP
+  script/DeployZap.s.sol  adds the USDC/ETH mint zap to a fund deployed before it
   test/fork/              the CHIP route against a live Bankr pool (BASE_FORK_URL=... to run)
   script/DeployMocks.s.sol  local / Base Sepolia with mocks, seeded
   basket/mag7.config.json   tickers, addresses, feeds, pools, CIKs, IWFs  (edit this)
@@ -90,7 +94,7 @@ cp web/.env.example web/.env   # set VITE_CHAIN=anvil
 npm run web                    # http://localhost:5173
 ```
 
-On the local chain the wallet menu offers an **Anvil dev account**, and the site has faucets for test stocks and test CHIP. Everything works end to end: mint (permits + one tx), redeem, and the keeper's CHIP burn.
+On the local chain the wallet menu offers an **Anvil dev account**, and the site has faucets for test stocks and test CHIP. Everything works end to end: mint (permits + one tx, or USDC/ETH through the zap), redeem, and the keeper's CHIP burn.
 
 To watch a rebalance, start anvil inside the US session (`anvil --timestamp <a weekday 15:00 UTC>`), propose a changed index with `cast send <rebalancer> "proposeIndex(uint256[],uint256[])"`, skip the delay with `cast rpc evm_increaseTime 604800`, refresh the mock feeds (`setPrice`), and run `KEEPER_KEY=<anvil key> CHAIN_ID=31337 RPC_URL=http://127.0.0.1:8545 npm run keeper`.
 

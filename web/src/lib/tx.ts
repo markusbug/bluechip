@@ -3,7 +3,7 @@ import { getCapabilities, sendCalls, waitForCallsStatus, waitForTransactionRecei
 import { wagmiConfig } from "../wagmi";
 import { siteConfig } from "../config";
 
-export type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[]; label: string };
+export type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[]; label: string; value?: bigint };
 
 export type Progress = { label: string; step: number; total: number; stage: "sign" | "wallet" | "pending" };
 
@@ -31,7 +31,7 @@ export async function runCalls(account: Address, calls: Call[], onProgress: (p: 
     const { id } = await sendCalls(wagmiConfig, {
       account,
       forceAtomic: true,
-      calls: calls.map(({ address, abi, functionName, args }) => ({ to: address, abi, functionName, args })),
+      calls: calls.map(({ address, abi, functionName, args, value }) => ({ to: address, abi, functionName, args, value })),
     });
     onProgress({ label: "Batch", step: 1, total: 1, stage: "pending" });
     const result = await waitForCallsStatus(wagmiConfig, { id, timeout: 120_000 });
@@ -48,6 +48,7 @@ export async function runCalls(account: Address, calls: Call[], onProgress: (p: 
       abi: call.abi,
       functionName: call.functionName,
       args: call.args,
+      value: call.value,
     } as Parameters<typeof writeContract>[1]);
     onProgress({ label: call.label, step: i + 1, total: calls.length, stage: "pending" });
     const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });

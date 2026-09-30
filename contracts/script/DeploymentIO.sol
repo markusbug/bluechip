@@ -3,6 +3,10 @@ pragma solidity 0.8.30;
 
 import {Script} from "forge-std/Script.sol";
 import {Rebalancer} from "../src/Rebalancer.sol";
+import {BlueFund} from "../src/BlueFund.sol";
+import {MintZap} from "../src/MintZap.sol";
+import {ICLPool} from "../src/interfaces/ICLPool.sol";
+import {IWETH} from "../src/interfaces/IWETH.sol";
 
 /// @notice Reads the basket and writes deployments/<chainId>.json, which the site imports.
 abstract contract DeploymentIO is Script {
@@ -60,8 +64,21 @@ abstract contract DeploymentIO is Script {
         });
     }
 
+    /// @dev The zap buys each stock in the pool the rebalancer trades in, and ETH's USDC in USDC_WETH_POOL.
+    function _deployZap(BlueFund fund, Basket memory b) internal returns (MintZap) {
+        return new MintZap(fund, b.usdc, IWETH(WETH), ICLPool(USDC_WETH_POOL), b.pools);
+    }
+
     function _deploymentPath() internal view returns (string memory) {
         return string.concat("deployments/", vm.toString(block.chainid), ".json");
+    }
+
+    /// @dev Add or replace one address in deployments/<chainId>.json, keeping everything else.
+    ///      (`vm.writeJson(value, path, key)` only replaces keys that already exist.)
+    function _setDeploymentAddress(string memory key, address value) internal {
+        string memory k = "existing";
+        vm.serializeJson(k, vm.readFile(_deploymentPath()));
+        vm.writeJson(vm.serializeAddress(k, key, value), _deploymentPath());
     }
 
     function _writeDeployment(

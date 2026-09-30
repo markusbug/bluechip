@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICLPool} from "../../src/interfaces/ICLPool.sol";
 
 interface ISwapCallback {
@@ -9,14 +10,17 @@ interface ISwapCallback {
 }
 
 /// @notice A Slipstream-shaped pool with a fixed price: sends the output first, then calls back for
-///         the input and checks it arrived, like the real pool. Exact input only.
-///         `price1Per0` is token1 base units per 1e18 token0 base units.
+///         the input and checks it arrived, like the real pool. Exact input (`amountSpecified > 0`)
+///         or exact output (`< 0`, input rounded up). `price1Per0` is token1 base units per 1e18
+///         token0 base units.
 contract MockCLPool is ICLPool {
     address public immutable token0;
     address public immutable token1;
     uint256 public price1Per0;
     /// @dev Test hook: ask the callback for more than was specified.
     uint256 public overcharge;
+    /// @dev Test hook: deliver less than an exact-output swap asked for, as if liquidity ran out.
+    uint256 public shortfall;
 
     constructor(address token0_, address token1_, uint256 price1Per0_) {
         token0 = token0_;
@@ -28,14 +32,26 @@ contract MockCLPool is ICLPool {
         overcharge = amount;
     }
 
+    function setShortfall(uint256 amount) external {
+        shortfall = amount;
+    }
+
     function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160, bytes calldata data)
         external
         returns (int256 amount0, int256 amount1)
     {
-        require(amountSpecified > 0, "exact input only");
-        uint256 amountIn = uint256(amountSpecified) + overcharge;
         (address tokenIn, address tokenOut) = zeroForOne ? (token0, token1) : (token1, token0);
-        uint256 out = zeroForOne ? amountIn * price1Per0 / 1e18 : amountIn * 1e18 / price1Per0;
+        uint256 amountIn;
+        uint256 out;
+        if (amountSpecified > 0) {
+            amountIn = uint256(amountSpecified);
+            out = zeroForOne ? amountIn * price1Per0 / 1e18 : amountIn * 1e18 / price1Per0;
+        } else {
+            out = uint256(-amountSpecified) - shortfall;
+            amountIn =
+                zeroForOne ? Math.ceilDiv(out * 1e18, price1Per0) : Math.ceilDiv(out * price1Per0, 1e18);
+        }
+        amountIn += overcharge;
         IERC20(tokenOut).transfer(recipient, out);
 
         (amount0, amount1) = zeroForOne ? (int256(amountIn), -int256(out)) : (-int256(out), int256(amountIn));

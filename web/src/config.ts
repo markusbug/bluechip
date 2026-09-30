@@ -20,6 +20,9 @@ export type Deployment = {
   /** Trades the holdings back onto the index. Absent in deployments made before it existed. */
   rebalancer?: Address;
   swapper?: Address;
+  /** Mints BLUE for USDC or ETH, buying the stocks on Aerodrome. Absent in deployments made before it existed. */
+  zap?: Address;
+  usdc?: Address;
   tokens: Address[];
   feeds: Address[];
   symbols: string[];

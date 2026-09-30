@@ -10,6 +10,11 @@ import {MockChip} from "../src/mocks/MockChip.sol";
 import {MockBasketFaucet} from "../src/mocks/MockBasketFaucet.sol";
 import {MockPriceFeed} from "../src/mocks/MockPriceFeed.sol";
 import {MockOracleSwapper} from "../src/mocks/MockOracleSwapper.sol";
+import {MockOraclePool} from "../src/mocks/MockOraclePool.sol";
+import {MockWETH} from "../src/mocks/MockWETH.sol";
+import {MintZap} from "../src/MintZap.sol";
+import {ICLPool} from "../src/interfaces/ICLPool.sol";
+import {IWETH} from "../src/interfaces/IWETH.sol";
 import {Rebalancer} from "../src/Rebalancer.sol";
 import {ISwapper} from "../src/interfaces/ISwapper.sol";
 import {IChip} from "../src/interfaces/IChip.sol";
@@ -17,7 +22,9 @@ import {IChip} from "../src/interfaces/IChip.sol";
 /// @notice Local / Base Sepolia: mock stocks with the real symbols and seed ratio, a mock CHIP,
 ///         mock price feeds at the basket's snapshot prices, an oracle-priced mock DEX that also sells
 ///         stocks for mock USDC, a mock CHIP market ($0.01, 10B CHIP of stock), and the fund, CHIP
-///         burner and rebalancer, seeded and ready. KEEPER (default: the deployer) runs the burns. The rebalancer only trades in the US regular
+///         burner and rebalancer, seeded and ready. Plus the zap over oracle-priced mock Slipstream
+///         pools (each stock and WETH at $3,000 against mock USDC, 0.05% spread), so the site can
+///         mint with USDC or ETH. KEEPER (default: the deployer) runs the burns. The rebalancer only trades in the US regular
 ///         session and needs fresh prices: poke the feeds with `setPrice` to test it.
 ///         SKEW_INDEX_BPS (test only) raises the last constituent's float in the rebalancer's first
 ///         index, so the fund starts off target and trades can be tested without the 7-day delay.
@@ -31,6 +38,7 @@ contract DeployMocks is DeploymentIO {
         MockChip chip;
         MockOracleSwapper swapper;
         MockStock usdc;
+        address usdcFeed;
         MockChipSwapper chipSwapper;
     }
 
@@ -80,6 +88,7 @@ contract DeployMocks is DeploymentIO {
 
         _seed(fund, deployer);
         MockBasketFaucet faucet = new MockBasketFaucet(fund);
+        MintZap zap = _deployMockZap(fund, m);
         vm.stopBroadcast();
 
         _writeDeployment(
@@ -93,6 +102,21 @@ contract DeployMocks is DeploymentIO {
             m.feeds,
             address(faucet)
         );
+        _setDeploymentAddress("zap", address(zap));
+        _setDeploymentAddress("usdc", address(m.usdc));
+    }
+
+    /// @dev Oracle-priced mock pools with USDC as token0 (as in the real stock pools) and WETH as
+    ///      token0 in its pool (as in the real one), and the zap over them.
+    function _deployMockZap(BlueFund fund, Mocks memory m) private returns (MintZap) {
+        address[] memory pools = new address[](m.tokens.length);
+        for (uint256 i; i < pools.length; ++i) {
+            pools[i] = address(new MockOraclePool(address(m.usdc), m.tokens[i], m.usdcFeed, m.feeds[i], 5));
+        }
+        MockWETH weth = new MockWETH();
+        address wethFeed = address(new MockPriceFeed(3_000e8));
+        MockOraclePool wethPool = new MockOraclePool(address(weth), address(m.usdc), wethFeed, m.usdcFeed, 5);
+        return new MintZap(fund, address(m.usdc), IWETH(address(weth)), ICLPool(address(wethPool)), pools);
     }
 
     /// @dev Mock stocks and feeds at the basket's snapshot prices, mock CHIP, oracle-priced mock DEX.
@@ -112,6 +136,7 @@ contract DeployMocks is DeploymentIO {
         address[] memory usdcFeed = new address[](1);
         usdcOnly[0] = address(m.usdc);
         usdcFeed[0] = address(new MockPriceFeed(1e8));
+        m.usdcFeed = usdcFeed[0];
         m.swapper.addTokens(usdcOnly, usdcFeed);
         m.chipSwapper = new MockChipSwapper(address(m.usdc), address(m.chip), 1e14);
         m.chip.transfer(address(m.chipSwapper), 10_000_000_000e18);

@@ -7,14 +7,15 @@ import { siteConfig } from "../config";
 const permitAbi = parseAbi([
   "function nonces(address) view returns (uint256)",
   "function name() view returns (string)",
+  "function version() view returns (string)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
 ]);
 
 /**
  * The EIP-712 domain a token's permit uses. B20 stocks and OpenZeppelin tokens expose it (EIP-5267);
- * Bankr/Doppler tokens don't, so fall back to `name()` + version "1" and check it against
- * DOMAIN_SEPARATOR. Null means "no usable permit", and the caller approves instead.
+ * Bankr/Doppler tokens and USDC don't, so fall back to `name()` + `version()` (USDC's is "2"; "1"
+ * when there is none) and check it against DOMAIN_SEPARATOR. Null means "no usable permit", and the caller approves instead.
  */
 export async function permitDomain(token: Address): Promise<TypedDataDomain | null> {
   const chainId = siteConfig.chain.id;
@@ -25,14 +26,15 @@ export async function permitDomain(token: Address): Promise<TypedDataDomain | nu
     /* not EIP-5267 */
   }
   try {
-    const [name, separator] = await readContracts(wagmiConfig, {
-      allowFailure: false,
+    const [name, separator, version] = await readContracts(wagmiConfig, {
       contracts: [
         { address: token, abi: permitAbi, functionName: "name" },
         { address: token, abi: permitAbi, functionName: "DOMAIN_SEPARATOR" },
+        { address: token, abi: permitAbi, functionName: "version" },
       ],
     });
-    const domain = { name, version: "1", chainId, verifyingContract: token };
+    if (name.status !== "success" || separator.status !== "success") return null;
+    const domain = { name: name.result, version: version.status === "success" ? version.result : "1", chainId, verifyingContract: token };
     const hash = hashDomain({
       domain: { ...domain, chainId: BigInt(chainId) },
       types: {
@@ -44,7 +46,7 @@ export async function permitDomain(token: Address): Promise<TypedDataDomain | nu
         ],
       },
     });
-    return hash === separator ? domain : null;
+    return hash === separator.result ? domain : null;
   } catch {
     return null;
   }

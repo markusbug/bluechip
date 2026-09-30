@@ -5,7 +5,10 @@ const known: Record<string, string> = {
   NotSeeded: "The fund hasn't been seeded yet.",
   ZeroAmount: "Enter an amount above zero.",
   TransferMismatch: "A token moved a different amount than expected.",
-  Slippage: "Your CHIP is worth nothing at this size. Claim a larger amount.",
+  Slippage: "Prices moved past your slippage limit since the quote. Try again, or allow more slippage.",
+  Expired: "The transaction waited too long to be included. Try again.",
+  PartialFill: "A stock pool doesn't have enough liquidity for this size. Try a smaller amount.",
+  RefundFailed: "The unspent ETH couldn't be sent back to your wallet.",
   ERC20InsufficientBalance: "Not enough balance.",
   ERC20InsufficientAllowance: "An allowance is missing. Try again to re-sign.",
 };

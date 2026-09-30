@@ -7,6 +7,7 @@ import {ChipBurner} from "../src/ChipBurner.sol";
 import {ChipSwapper} from "../src/ChipSwapper.sol";
 import {Rebalancer} from "../src/Rebalancer.sol";
 import {AerodromeSwapper} from "../src/AerodromeSwapper.sol";
+import {MintZap} from "../src/MintZap.sol";
 import {ISwapper} from "../src/interfaces/ISwapper.sol";
 import {IChip} from "../src/interfaces/IChip.sol";
 import {ICLPool} from "../src/interfaces/ICLPool.sol";
@@ -16,6 +17,7 @@ import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
 ///         the stocks' Aerodrome USDC pools. With CHIP_ADDRESS (and its v4 pool key from
 ///         scripts/chip-pool.mjs) it also deploys the CHIP burner as the fee recipient; without it,
 ///         mint fees go to FEE_RECIPIENT (default: the owner) until script/DeployBurner.s.sol.
+///         Last comes the zap that mints BLUE for USDC or ETH through the same pools.
 ///         Never calls the stock tokens (they are chain-native and can't run in forge's simulator),
 ///         so seeding is a separate step: scripts/seed.sh.
 ///
@@ -51,6 +53,7 @@ contract Deploy is DeploymentIO {
             );
             require(address(burner) == fund.feeRecipient(), "burner address mismatch");
         }
+        MintZap zap = _deployZap(fund, b);
         vm.stopBroadcast();
         require(address(rebalancer) == fund.rebalancer(), "rebalancer address mismatch");
 
@@ -65,6 +68,8 @@ contract Deploy is DeploymentIO {
             b.feeds,
             address(0)
         );
+        _setDeploymentAddress("zap", address(zap));
+        _setDeploymentAddress("usdc", b.usdc);
     }
 
     /// @dev The rebalancer is the next contract after the fund and the burner the one after that.

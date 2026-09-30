@@ -75,7 +75,7 @@ forge script script/Deploy.s.sol --rpc-url base --account deployer --broadcast \
   --verify --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
-- The script deploys the `AerodromeSwapper` over the pools in the basket, the `ChipSwapper` (USDC → WETH → CHIP), `BlueFund` (0.30% fee, recipient = the burner's precomputed address, rebalancer = the rebalancer's), the `Rebalancer` with the basket's float shares as its index, and the `ChipBurner`. It writes `deployments/8453.json`, which the site and the scripts import.
+- The script deploys the `AerodromeSwapper` over the pools in the basket, the `ChipSwapper` (USDC → WETH → CHIP), `BlueFund` (0.30% fee, recipient = the burner's precomputed address, rebalancer = the rebalancer's), the `Rebalancer` with the basket's float shares as its index, the `ChipBurner`, and the `MintZap` (mint with USDC or ETH through the same pools). It writes `deployments/8453.json`, which the site and the scripts import.
 - `KEEPER=<keeper wallet>` makes the automation keeper the burner's keeper (default: the owner).
 - **Fund before CHIP:** leave out the `CHIP_*` variables. Mint fees then go to `FEE_RECIPIENT` (default: the owner). Once CHIP is live, run step 3b.
 
@@ -90,6 +90,23 @@ cast send <fund> "setFeeRecipient(address)" <burner> --account deployer --rpc-ur
 ```
 
 Fees minted before this sat in `FEE_RECIPIENT`; send that BLUE to the burner to have it burned too.
+
+### 3c. Add the zap to a fund deployed before it
+
+`MintZap` lets people mint with USDC or ETH: it buys exactly the stocks a mint deposits, with exact-output swaps in the basket's Aerodrome pools (ETH goes through the USDC/WETH pool first), and mints in the same transaction. It has no owner and needs nothing from the fund, so anyone can deploy it.
+
+```bash
+cd contracts
+forge script script/DeployZap.s.sol --rpc-url base --account deployer --broadcast --verify
+```
+
+This adds `zap` and `usdc` to `deployments/8453.json`, and the site shows "Pay with USDC / ETH" once it's redeployed. Forge can't simulate the stock tokens, so the first zap mint is also the first time they move through exact-output swaps. Check the quote, then make a small mint with the real node:
+
+```bash
+cast call <zap> "quoteMint(uint256)(uint256,uint256)" 10000000000000000 --rpc-url base   # 0.01 BLUE: USDC in, ETH in
+cast send <zap> "mintWithEth(uint256,address,uint256)" 10000000000000000 <you> <unix deadline> \
+  --value <ETH quote + 2%> --account deployer --rpc-url base
+```
 - Rebalancer settings default to 0.5% max slippage against the oracle, trades of 0.05–1% of NAV, 30 minutes apart, on prices at most 6 hours old. Override with `MAX_SLIPPAGE_BPS`, `MAX_TRADE_BPS`, `MIN_TRADE_BPS`, `COOLDOWN`, `MAX_FEED_AGE`; the owner can change them later within hard caps.
 - `SUPPLY_CAP` is in wei. Here 1,000 BLUE, about $100k. Keep it low at first; stock liquidity on Base is thin.
 - The script never touches the stock tokens. They're chain-native B20 precompiles, and forge's simulator can't execute them. (The swapper's constructor reads the pools, which are ordinary contracts.)

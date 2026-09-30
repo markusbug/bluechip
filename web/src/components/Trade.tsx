@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
+import { deployment } from "../config";
 import { MintPanel } from "./MintPanel";
 import { RedeemPanel } from "./RedeemPanel";
 import { Panel } from "./ui";
@@ -16,7 +17,9 @@ export function Trade({ fund, wallet, onDone }: { fund: FundState; wallet: Walle
           get your share of every stock back. No oracle, no pricing, no one in the middle.
         </p>
         <p className="mt-3 text-muted">
-          Short on a stock? Each row links to Bankr, where you can buy it on Base.
+          {deployment?.zap
+            ? "Don't hold the stocks? Pay with USDC or ETH instead: one transaction buys exactly the stocks your mint deposits on Aerodrome and mints your BLUE."
+            : "Short on a stock? Each row links to Bankr, where you can buy it on Base."}
         </p>
         {!fund.deployed && <p className="mt-6 rounded-2xl bg-blue-soft p-4 text-sm">The fund isn&apos;t deployed on this network yet.</p>}
       </div>
