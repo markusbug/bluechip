@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useReadContract } from "wagmi";
 import type { Address } from "viem";
-import { erc20Abi, maxUint256 } from "viem";
+import { erc20Abi } from "viem";
 import { blueFundAbi, mockFaucetAbi } from "../abi";
 import { deployment, siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
@@ -13,12 +13,14 @@ import { canBatch, runCalls, type Call } from "../lib/tx";
 import { AmountInput, Button, LinkButton, TokenIcon, TxStatus } from "./ui";
 import { ZapMint, type PayToken } from "./ZapMint";
 
-/** Deposits round up by at most a few units if someone mints first; approve 0.1% more so that can't fail. */
+/**
+ * Approvals and permits cover exactly this mint, never more. Deposits round up by at most a few units if
+ * someone mints first; 0.1% more covers that.
+ */
 const withHeadroom = (x: bigint) => x + x / 1000n + 1n;
 
 export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: WalletState; onDone: () => void }) {
   const [amount, setAmount] = useState("1");
-  const [exact, setExact] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
@@ -59,7 +61,6 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
     setError(undefined);
     setHash(undefined);
     try {
-      const approveValue = (req: bigint) => (exact ? withHeadroom(req) : maxUint256);
       const mintCall: Call = { address: d.fund, abi: blueFundAbi, functionName: "mint", args: [shares!, account], label: "Mint" };
       let tx: string;
 
@@ -69,7 +70,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
           address: r.c.address,
           abi: erc20Abi,
           functionName: "approve",
-          args: [d.fund, approveValue(r.req)],
+          args: [d.fund, withHeadroom(r.req)],
           label: `Approve ${r.c.ticker}`,
         }));
         tx = await runCalls(account, [...approvals, mintCall], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
@@ -81,10 +82,10 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
           setMessage(`Sign ${k + 1} of ${toApprove.length}: allow the fund to take ${r.c.ticker} (no gas)`);
           const domain = await permitDomain(r.c.address);
           if (!domain) {
-            fallback.push({ address: r.c.address, abi: erc20Abi, functionName: "approve", args: [d.fund, approveValue(r.req)], label: `Approve ${r.c.ticker}` });
+            fallback.push({ address: r.c.address, abi: erc20Abi, functionName: "approve", args: [d.fund, withHeadroom(r.req)], label: `Approve ${r.c.ticker}` });
             continue;
           }
-          permits[r.i] = await signPermit({ token: r.c.address, domain, owner: account, spender: d.fund, value: approveValue(r.req), deadline: permitDeadline() });
+          permits[r.i] = await signPermit({ token: r.c.address, domain, owner: account, spender: d.fund, value: withHeadroom(r.req), deadline: permitDeadline() });
         }
         const mintWithPermits: Call = {
           address: d.fund,
@@ -147,6 +148,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
               [
                 ["usdc", "USDC"],
                 ["eth", "ETH"],
+                ...(d.weth ? ([["weth", "WETH"]] as const) : []),
                 ["stocks", "The 7 stocks"],
               ] as const
             ).map(([k, label]) => (
@@ -194,16 +196,6 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
             <Button variant="outline" className="mt-4" onClick={faucet} disabled={busy || !shares}>
               Get test stocks for this mint
             </Button>
-          )}
-
-          {toApprove.length > 0 && connected && (
-            <label className="mt-5 flex items-start gap-2 text-sm text-muted">
-              <input type="checkbox" className="mt-1 accent-[var(--blue)]" checked={exact} onChange={(e) => setExact(e.target.checked)} />
-              <span>
-                Approve only this mint&apos;s amounts. Leave it off to approve once and mint later in a single transaction. The fund
-                can only take tokens when you call mint.
-              </span>
-            </label>
           )}
 
           <Button size="lg" className="mt-6 w-full" disabled={disabled} onClick={mint}>

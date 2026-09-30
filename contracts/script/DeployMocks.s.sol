@@ -104,6 +104,7 @@ contract DeployMocks is DeploymentIO {
         );
         _setDeploymentAddress("zap", address(zap));
         _setDeploymentAddress("usdc", address(m.usdc));
+        _setDeploymentAddress("weth", address(zap.weth()));
     }
 
     /// @dev Oracle-priced mock pools with USDC as token0 (as in the real stock pools) and WETH as

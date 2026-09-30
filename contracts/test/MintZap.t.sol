@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Fixture} from "./Fixture.sol";
 import {BlueFund} from "../src/BlueFund.sol";
 import {MintZap} from "../src/MintZap.sol";
@@ -23,6 +24,32 @@ contract TwoMints {
         usdc.approve(address(zap), type(uint256).max);
         first = zap.mintWithUsdc(shares, msg.sender, maxEach, block.timestamp);
         second = zap.mintWithUsdc(shares, msg.sender, maxEach, block.timestamp);
+    }
+
+    /// @dev A WETH mint, then a USDC one: the second must pay in USDC.
+    function wethThenUsdc(
+        MintZap zap,
+        MockStock usdc,
+        IERC20 weth,
+        uint256 shares,
+        uint256 maxWeth,
+        uint256 maxUsdc
+    ) external returns (uint256 wethIn, uint256 usdcIn) {
+        weth.approve(address(zap), type(uint256).max);
+        usdc.approve(address(zap), type(uint256).max);
+        wethIn = zap.mintWithWeth(shares, msg.sender, maxWeth, block.timestamp);
+        usdcIn = zap.mintWithUsdc(shares, msg.sender, maxUsdc, block.timestamp);
+    }
+
+    /// @dev An ETH mint, then a WETH one: the second must pay from this contract, not the zap.
+    function ethThenWeth(MintZap zap, IERC20 weth, uint256 shares, uint256 maxEach)
+        external
+        payable
+        returns (uint256 ethIn, uint256 wethIn)
+    {
+        weth.approve(address(zap), type(uint256).max);
+        ethIn = zap.mintWithEth{value: maxEach}(shares, msg.sender, block.timestamp);
+        wethIn = zap.mintWithWeth(shares, msg.sender, maxEach, block.timestamp);
     }
 
     function ethTwice(MintZap zap, uint256 shares, uint256 valueEach)
@@ -191,6 +218,8 @@ contract MintZapTest is Fixture {
         vm.deal(alice, 10 ether);
 
         vm.prank(alice);
+        vm.expectEmit(false, false, false, false, address(zap));
+        emit MintZap.ZapMinted(alice, alice, shares, address(0), 0);
         uint256 spent = zap.mintWithEth{value: quoted * 101 / 100}(shares, alice, block.timestamp);
 
         // Separate swaps round up separately: at most a wei per stock above the one-swap quote.
@@ -226,7 +255,93 @@ contract MintZapTest is Fixture {
         assertFalse(ok);
     }
 
+    // ---------------------------------------------------------------- WETH
+
+    function test_mintWithWeth() public {
+        uint256 shares = 3e18;
+        (, uint256 quoted) = zap.quoteMint(shares);
+        _giveWeth(alice, 10 ether);
+
+        vm.startPrank(alice);
+        weth.approve(address(zap), type(uint256).max);
+        uint256 max = quoted * 101 / 100;
+        uint256 spent = zap.mintWithWeth(shares, alice, max, block.timestamp);
+        vm.stopPrank();
+
+        // Like ETH, a wei per stock of rounding at most; only what the pools asked for leaves the wallet.
+        assertApproxEqAbs(spent, quoted, stocks.length);
+        assertEq(weth.balanceOf(alice), 10 ether - spent);
+        assertEq(alice.balance, 0);
+        (uint256 toMinter,) = fund.previewMintFee(shares);
+        assertEq(fund.balanceOf(alice), toMinter);
+        _assertZapEmpty();
+        assertEq(address(zap).balance, 0);
+    }
+
+    function test_mintWithWethEmits() public {
+        (, uint256 quoted) = zap.quoteMint(1e18);
+        _giveWeth(alice, 10 ether);
+        vm.startPrank(alice);
+        weth.approve(address(zap), type(uint256).max);
+        vm.expectEmit(true, true, false, false, address(zap));
+        emit MintZap.ZapMinted(alice, bob, 1e18, address(weth), 0);
+        zap.mintWithWeth(1e18, bob, quoted * 101 / 100, block.timestamp);
+        vm.stopPrank();
+    }
+
+    function test_wethSlippage() public {
+        uint256 shares = 2e18;
+        (, uint256 quoted) = zap.quoteMint(shares);
+        _giveWeth(alice, 10 ether);
+        vm.startPrank(alice);
+        weth.approve(address(zap), type(uint256).max);
+        vm.expectPartialRevert(MintZap.Slippage.selector);
+        zap.mintWithWeth(shares, alice, quoted / 2, block.timestamp);
+        vm.stopPrank();
+        assertEq(weth.balanceOf(alice), 10 ether);
+    }
+
+    function test_wethNeedsAllowance() public {
+        _giveWeth(alice, 10 ether);
+        vm.prank(alice);
+        vm.expectRevert();
+        zap.mintWithWeth(1e18, alice, type(uint256).max, block.timestamp);
+    }
+
+    function test_wethExpired() public {
+        vm.prank(alice);
+        vm.expectRevert(MintZap.Expired.selector);
+        zap.mintWithWeth(1e18, alice, type(uint256).max, block.timestamp - 1);
+    }
+
     // ---------------------------------------------------------------- transient state
+
+    function test_mixedRoutesInOneTransaction() public {
+        TwoMints c = new TwoMints();
+        uint256 shares = 1e18;
+        (uint256 quotedUsdc, uint256 quotedEth) = zap.quoteMint(shares);
+
+        // WETH then USDC: the USDC mint takes USDC and leaves the rest of the WETH alone.
+        _giveWeth(address(c), 1 ether);
+        usdc.mint(address(c), 1_000e6);
+        (uint256 wethIn, uint256 usdcIn) =
+            c.wethThenUsdc(zap, usdc, IERC20(address(weth)), shares, quotedEth * 2, quotedUsdc * 2);
+        assertApproxEqAbs(wethIn, quotedEth, stocks.length);
+        assertApproxEqAbs(usdcIn, quotedUsdc, stocks.length);
+        assertEq(weth.balanceOf(address(c)), 1 ether - wethIn);
+        assertEq(usdc.balanceOf(address(c)), 1_000e6 - usdcIn);
+
+        // ETH then WETH: the WETH mint pays from the caller's WETH.
+        vm.deal(address(this), 10 ether);
+        uint256 ethBefore = address(c).balance;
+        uint256 wethBefore = weth.balanceOf(address(c));
+        uint256 ethIn;
+        (ethIn, wethIn) =
+            c.ethThenWeth{value: quotedEth * 2}(zap, IERC20(address(weth)), shares, quotedEth * 2);
+        assertEq(address(c).balance, ethBefore + quotedEth * 2 - ethIn);
+        assertEq(weth.balanceOf(address(c)), wethBefore - wethIn);
+        _assertZapEmpty();
+    }
 
     function test_twoMintsInOneTransaction() public {
         TwoMints c = new TwoMints();
@@ -281,11 +396,14 @@ contract MintZapTest is Fixture {
 
         usdc.mint(alice, 10_000e6);
         vm.deal(alice, 10 ether);
+        _giveWeth(alice, 1 ether);
         vm.startPrank(alice);
         usdc.approve(address(z), type(uint256).max);
+        weth.approve(address(z), type(uint256).max);
         // Works while the pools deliver in full.
         z.mintWithUsdc(1e18, alice, type(uint256).max, block.timestamp);
         z.mintWithEth{value: 1 ether}(1e18, alice, block.timestamp);
+        z.mintWithWeth(1e18, alice, 1 ether, block.timestamp);
 
         stockPool.setShortfall(1);
         vm.expectRevert(abi.encodeWithSelector(MintZap.PartialFill.selector, tokens[0]));
@@ -295,6 +413,8 @@ contract MintZapTest is Fixture {
         ethPool.setShortfall(1);
         vm.expectRevert(abi.encodeWithSelector(MintZap.PartialFill.selector, address(usdc)));
         z.mintWithEth{value: 1 ether}(1e18, alice, block.timestamp);
+        vm.expectRevert(abi.encodeWithSelector(MintZap.PartialFill.selector, address(usdc)));
+        z.mintWithWeth(1e18, alice, 1 ether, block.timestamp);
         vm.stopPrank();
     }
 
@@ -355,14 +475,23 @@ contract MintZapTest is Fixture {
 
     // ---------------------------------------------------------------- fuzz
 
-    function testFuzz_mintsExactlyAtTheQuote(uint256 shares, uint256 nvdaPrice, bool withEth) public {
+    function testFuzz_mintsExactlyAtTheQuote(uint256 shares, uint256 nvdaPrice, uint8 route) public {
         shares = bound(shares, 1, 10_000e18);
         feeds[0].setPrice(int256(bound(nvdaPrice, 1e8, 10_000e8)));
         (uint256 quotedUsdc, uint256 quotedEth) = zap.quoteMint(shares);
         (uint256 toMinter,) = fund.previewMintFee(shares);
 
         uint256 spent;
-        if (withEth) {
+        route %= 3;
+        if (route == 2) {
+            _giveWeth(alice, quotedEth + stocks.length);
+            vm.startPrank(alice);
+            weth.approve(address(zap), type(uint256).max);
+            spent = zap.mintWithWeth(shares, alice, quotedEth + stocks.length, block.timestamp);
+            vm.stopPrank();
+            assertApproxEqAbs(spent, quotedEth, stocks.length);
+            assertEq(weth.balanceOf(alice), quotedEth + stocks.length - spent);
+        } else if (route == 1) {
             vm.deal(alice, quotedEth + 1 ether);
             vm.prank(alice);
             spent = zap.mintWithEth{value: quotedEth + stocks.length}(shares, alice, block.timestamp);
@@ -382,6 +511,12 @@ contract MintZapTest is Fixture {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    function _giveWeth(address who, uint256 amount) internal {
+        vm.deal(who, who.balance + amount);
+        vm.prank(who);
+        weth.deposit{value: amount}();
+    }
 
     function _assertZapEmpty() internal view {
         for (uint256 i; i < stocks.length; ++i) {

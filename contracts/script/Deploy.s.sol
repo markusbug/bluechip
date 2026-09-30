@@ -70,6 +70,7 @@ contract Deploy is DeploymentIO {
         );
         _setDeploymentAddress("zap", address(zap));
         _setDeploymentAddress("usdc", b.usdc);
+        _setDeploymentAddress("weth", address(zap.weth()));
     }
 
     /// @dev The rebalancer is the next contract after the fund and the burner the one after that.

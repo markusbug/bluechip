@@ -23,6 +23,8 @@ export type Deployment = {
   /** Mints BLUE for USDC or ETH, buying the stocks on Aerodrome. Absent in deployments made before it existed. */
   zap?: Address;
   usdc?: Address;
+  /** Absent in deployments made before the zap took WETH. */
+  weth?: Address;
   tokens: Address[];
   feeds: Address[];
   symbols: string[];

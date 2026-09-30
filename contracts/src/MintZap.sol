@@ -11,14 +11,15 @@ import {ICLPool} from "./interfaces/ICLPool.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 
 /// @title MintZap
-/// @notice Mint $BLUE with USDC or ETH instead of the stocks: buys exactly the basket a mint of
+/// @notice Mint $BLUE with USDC, ETH or WETH instead of the stocks: buys exactly the basket a mint of
 ///         `shares` deposits, each stock in its USDC pool on Aerodrome Slipstream (exact-output
 ///         swaps), then mints. The buyer pays only what the pools ask, never more than their maximum.
 ///         `quoteMint` gives the price to set that maximum from.
 /// @dev    No owner, holds nothing between calls and checks no price: the buyer's maximum is the
 ///         only slippage protection. USDC goes from the buyer straight to each pool in its swap
-///         callback. ETH is wrapped, and each stock's USDC is bought with WETH inside that callback
-///         (a nested exact-output swap in the USDC/WETH pool); the unspent ETH is refunded.
+///         callback. With WETH, each stock's USDC is bought inside that callback (a nested
+///         exact-output swap in the USDC/WETH pool), and the WETH goes from the buyer straight to
+///         that pool. ETH takes the WETH route after being wrapped here; the unspent ETH is refunded.
 ///         Like the fund, the constructor never calls the stock tokens.
 contract MintZap is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -30,21 +31,24 @@ contract MintZap is ReentrancyGuard {
     BlueFund public immutable fund;
     address public immutable usdc;
     IWETH public immutable weth;
-    /// @notice The USDC/WETH pool the ETH route buys its USDC in.
+    /// @notice The USDC/WETH pool the WETH and ETH routes buy their USDC in.
     ICLPool public immutable wethPool;
     /// @notice Each constituent's USDC pool.
     mapping(address token => address pool) public poolOf;
 
     /// @dev The pool whose callback is expected right now.
     address private transient _activePool;
-    /// @dev Who pays for the swaps in progress: the buyer's USDC, or this contract's WETH.
+    /// @dev Who pays for the swaps in progress: the buyer, or this contract with wrapped ETH.
     address private transient _payer;
-    /// @dev What the swaps have cost so far, and the most they may cost (USDC, or WETH for ETH).
+    /// @dev The swaps in progress are paid in WETH (the WETH and ETH routes), not USDC.
+    bool private transient _payWithWeth;
+    /// @dev What the swaps have cost so far, and the most they may cost (in USDC or WETH).
     uint256 private transient _spent;
     uint256 private transient _maxIn;
     /// @dev Inside `quoteMint`: every callback reverts with what it was asked to pay.
     bool private transient _quoting;
 
+    /// @param payToken USDC, WETH, or zero for ETH.
     event ZapMinted(
         address indexed buyer, address indexed to, uint256 shares, address payToken, uint256 amountIn
     );
@@ -101,6 +105,17 @@ contract MintZap is ReentrancyGuard {
         return _mintWithUsdc(shares, to, maxUsdcIn, deadline);
     }
 
+    /// @notice Buy the basket for `shares` with the caller's WETH (approved to this contract) and
+    ///         mint them to `to`, minus the fund's mint fee. Spends at most `maxWethIn`.
+    function mintWithWeth(uint256 shares, address to, uint256 maxWethIn, uint256 deadline)
+        external
+        nonReentrant
+        returns (uint256 wethIn)
+    {
+        wethIn = _buyAndMint(shares, to, maxWethIn, deadline, msg.sender, true);
+        emit ZapMinted(msg.sender, to, shares, address(weth), wethIn);
+    }
+
     /// @notice Buy the basket for `shares` with ETH and mint them to `to`, minus the fund's mint fee.
     ///         Spends at most `msg.value` and refunds the rest to the caller.
     function mintWithEth(uint256 shares, address to, uint256 deadline)
@@ -110,34 +125,38 @@ contract MintZap is ReentrancyGuard {
         returns (uint256 ethIn)
     {
         weth.deposit{value: msg.value}();
-        _payer = address(this);
-        ethIn = _buyAndMint(shares, to, msg.value, deadline);
+        ethIn = _buyAndMint(shares, to, msg.value, deadline, address(this), true);
         uint256 refund = msg.value - ethIn;
         if (refund != 0) {
             weth.withdraw(refund);
             (bool ok,) = msg.sender.call{value: refund}("");
             if (!ok) revert RefundFailed();
         }
-        emit ZapMinted(msg.sender, to, shares, address(weth), ethIn);
+        emit ZapMinted(msg.sender, to, shares, address(0), ethIn);
     }
 
     function _mintWithUsdc(uint256 shares, address to, uint256 maxUsdcIn, uint256 deadline)
         private
         returns (uint256 usdcIn)
     {
-        _payer = msg.sender;
-        usdcIn = _buyAndMint(shares, to, maxUsdcIn, deadline);
+        usdcIn = _buyAndMint(shares, to, maxUsdcIn, deadline, msg.sender, false);
         emit ZapMinted(msg.sender, to, shares, usdc, usdcIn);
     }
 
     /// @dev Buys what `fund.mint(shares)` will pull (less anything already here), then mints.
     ///      Nothing can move the fund between the preview and the mint, so the amounts match exactly.
-    function _buyAndMint(uint256 shares, address to, uint256 maxIn, uint256 deadline)
-        private
-        returns (uint256 spent)
-    {
+    function _buyAndMint(
+        uint256 shares,
+        address to,
+        uint256 maxIn,
+        uint256 deadline,
+        address payer,
+        bool payWithWeth
+    ) private returns (uint256 spent) {
         if (block.timestamp > deadline) revert Expired();
-        // Transient storage lasts the whole transaction: start from zero on every mint.
+        // Transient storage lasts the whole transaction: set all of it on every mint.
+        _payer = payer;
+        _payWithWeth = payWithWeth;
         _spent = 0;
         _maxIn = maxIn;
         (address[] memory tokens, uint256[] memory amounts) = fund.previewMint(shares);
@@ -187,28 +206,29 @@ contract MintZap is ReentrancyGuard {
         if (_quoting) revert Quote(owed);
 
         if (msg.sender == address(wethPool)) {
-            // The ETH route's USDC, bought inside a stock swap: pay with the wrapped ETH.
-            _charge(owed);
-            IERC20(address(weth)).safeTransfer(msg.sender, owed);
-        } else if (_payer == address(this)) {
-            // A stock swap on the ETH route: buy the USDC it owes, delivered straight to its pool.
+            // The USDC for a stock swap on the WETH route: pay with WETH.
+            _pay(address(weth), owed);
+        } else if (_payWithWeth) {
+            // A stock swap on the WETH route: buy the USDC it owes, delivered straight to its pool.
             if (_swapExactOut(wethPool, address(weth), owed, msg.sender) < owed) revert PartialFill(usdc);
         } else {
-            _charge(owed);
-            IERC20(usdc).safeTransferFrom(_payer, msg.sender, owed);
+            _pay(usdc, owed);
         }
     }
 
-    function _charge(uint256 amount) private {
+    /// @dev Pay the calling pool `amount` of `token`, from the buyer or (wrapped ETH) from here.
+    function _pay(address token, uint256 amount) private {
         uint256 spent = _spent + amount;
         if (spent > _maxIn) revert Slippage(spent, _maxIn);
         _spent = spent;
+        if (_payer == address(this)) IERC20(token).safeTransfer(msg.sender, amount);
+        else IERC20(token).safeTransferFrom(_payer, msg.sender, amount);
     }
 
     // ---------------------------------------------------------------- quote
 
-    /// @notice What minting `shares` costs at current pool prices, in USDC and in ETH, before
-    ///         slippage. Not a view: it simulates each swap and reverts it, so call it with eth_call.
+    /// @notice What minting `shares` costs at current pool prices, in USDC and in ETH (or WETH),
+    ///         before slippage. Not a view: it simulates each swap and reverts it, so call it with eth_call.
     function quoteMint(uint256 shares) external nonReentrant returns (uint256 usdcIn, uint256 ethIn) {
         (address[] memory tokens, uint256[] memory amounts) = fund.previewMint(shares);
         _quoting = true;

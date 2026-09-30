@@ -12,7 +12,7 @@ import { canBatch, runCalls, type Call } from "../lib/tx";
 import { progressText } from "./MintPanel";
 import { Button, TxStatus } from "./ui";
 
-export type PayToken = "usdc" | "eth";
+export type PayToken = "usdc" | "eth" | "weth";
 
 const TOLERANCES = [50, 100, 300] as const;
 /** Above this much over the fund's value, say why the price may be off. */
@@ -22,9 +22,10 @@ const PREMIUM_WARNING = 0.02;
 const zapAbi = [...mintZapAbi, ...blueFundAbi.filter((x) => x.type === "error")] as Abi;
 
 /**
- * Mint with USDC or ETH: the zap buys exactly the stocks the mint deposits on Aerodrome and mints, in
- * one transaction. The price is `quoteMint` (simulated with eth_call), plus a slippage allowance the
- * contract enforces as a maximum.
+ * Mint with USDC, ETH or WETH: the zap buys exactly the stocks the mint deposits on Aerodrome and
+ * mints, in one transaction. The price is `quoteMint` (simulated with eth_call), plus a slippage
+ * allowance the contract enforces as a maximum. Approvals and permits are for that maximum only.
+ * WETH has no permit, so a plain wallet approves and then mints (two transactions).
  */
 export function ZapMint({
   pay,
@@ -54,6 +55,7 @@ export function ZapMint({
   const d = deployment!;
   const zap = d.zap!;
   const usdc = d.usdc!;
+  const weth = d.weth;
   const quote = useSimulateContract({
     address: zap,
     abi: mintZapAbi,
@@ -64,10 +66,11 @@ export function ZapMint({
   const [usdcIn, ethIn] = quote.data?.result ?? [undefined, undefined];
   const cost = pay === "usdc" ? usdcIn : ethIn;
   const decimals = pay === "usdc" ? 6 : 18;
-  const unit = pay === "usdc" ? "USDC" : "ETH";
+  const unit = { usdc: "USDC", eth: "ETH", weth: "WETH" }[pay];
   const max = cost === undefined ? undefined : (cost * BigInt(10_000 + toleranceBps)) / 10_000n;
-  const balance = pay === "usdc" ? wallet.usdc : wallet.eth;
-  // Every stock is bought with USDC on both routes, so the USDC quote is the price in dollars.
+  const balance = { usdc: wallet.usdc, eth: wallet.eth, weth: wallet.weth }[pay];
+  // Every stock is bought with USDC on every route, so the USDC quote is the price in dollars.
+  // WETH buys that USDC in the same pool ETH does, so it costs the same as ETH.
   const costUsd = usdcIn === undefined ? undefined : Number(usdcIn) / 1e6;
   const premium = costUsd !== undefined && value ? costUsd / value - 1 : undefined;
 
@@ -86,6 +89,10 @@ export function ZapMint({
       let calls: Call[];
       if (pay === "eth") {
         calls = [{ address: zap, abi: zapAbi, functionName: "mintWithEth", args: [shares!, account, deadline], value: max!, label: "Buy and mint" }];
+      } else if (pay === "weth") {
+        const mintCall: Call = { address: zap, abi: zapAbi, functionName: "mintWithWeth", args: [shares!, account, max!, deadline], label: "Buy and mint" };
+        const approve: Call = { address: weth!, abi: erc20Abi, functionName: "approve", args: [zap, max!], label: "Approve WETH" };
+        calls = wallet.wethAllowance >= max! ? [mintCall] : [approve, mintCall];
       } else {
         const mintCall: Call = { address: zap, abi: zapAbi, functionName: "mintWithUsdc", args: [shares!, account, max!, deadline], label: "Buy and mint" };
         const approve: Call = { address: usdc, abi: erc20Abi, functionName: "approve", args: [zap, max!], label: "Approve USDC" };

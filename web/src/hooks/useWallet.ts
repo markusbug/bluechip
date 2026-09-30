@@ -15,15 +15,19 @@ export type WalletState = {
   eth: bigint;
   usdc: bigint;
   usdcAllowance: bigint;
+  weth: bigint;
+  wethAllowance: bigint;
   refetch: () => void;
 };
 
-/** The connected wallet's stocks, allowances to the fund, BLUE and CHIP, and its ETH and USDC for the zap. */
+/** The connected wallet's stocks, allowances to the fund, BLUE and CHIP, and its ETH, USDC and WETH for the zap. */
 export function useWallet(): WalletState {
   const { address, chainId } = useAccount();
   const d = deployment;
   const n = d?.tokens.length ?? 0;
   const chip = siteConfig.chipAddress;
+  // What the zap takes besides ETH: a balance and an allowance to the zap for each.
+  const zapTokens = d?.zap ? [d.usdc, d.weth].filter((t): t is Address => !!t) : [];
 
   const contracts =
     d && address
@@ -32,12 +36,10 @@ export function useWallet(): WalletState {
           ...(chip ? [{ address: chip, abi: erc20Abi, functionName: "balanceOf", args: [address] }] : []),
           ...d.tokens.map((t) => ({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [address] })),
           ...d.tokens.map((t) => ({ address: t, abi: erc20Abi, functionName: "allowance", args: [address, d.fund] })),
-          ...(d.zap && d.usdc
-            ? [
-                { address: d.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] },
-                { address: d.usdc, abi: erc20Abi, functionName: "allowance", args: [address, d.zap] },
-              ]
-            : []),
+          ...zapTokens.flatMap((t) => [
+            { address: t, abi: erc20Abi, functionName: "balanceOf", args: [address] },
+            { address: t, abi: erc20Abi, functionName: "allowance", args: [address, d.zap] },
+          ]),
         ]
       : [];
 
@@ -48,6 +50,10 @@ export function useWallet(): WalletState {
   const r = (q.data ?? []) as { status: string; result?: unknown }[];
   const val = (i: number) => (r[i]?.status === "success" ? (r[i].result as bigint) : 0n);
   const o = chip ? 2 : 1;
+  const zapRead = (token: Address | undefined, k: 0 | 1) => {
+    const j = token ? zapTokens.indexOf(token) : -1;
+    return j < 0 ? 0n : val(o + 2 * n + 2 * j + k);
+  };
   const eth = useBalance({ address, chainId: siteConfig.chain.id, query: { enabled: !!address, refetchInterval: 10_000 } });
 
   return {
@@ -58,8 +64,10 @@ export function useWallet(): WalletState {
     balances: Array.from({ length: n }, (_, i) => val(o + i)),
     allowances: Array.from({ length: n }, (_, i) => val(o + n + i)),
     eth: eth.data?.value ?? 0n,
-    usdc: val(o + 2 * n),
-    usdcAllowance: val(o + 2 * n + 1),
+    usdc: zapRead(d?.usdc, 0),
+    usdcAllowance: zapRead(d?.usdc, 1),
+    weth: zapRead(d?.weth, 0),
+    wethAllowance: zapRead(d?.weth, 1),
     refetch: () => {
       void q.refetch();
       void eth.refetch();
