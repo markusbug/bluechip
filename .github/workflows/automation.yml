@@ -1,11 +1,18 @@
-# Runs the fund's automation on mainnet:
-#   keeper        every 10 minutes during the US session: activates a due index, makes one trade.
-#   index-update  weekly: recomputes float shares from SEC filings and proposes them if they moved.
+# Keeps the fund on its index without anyone at the keyboard:
+#   keeper        every 10 minutes during the US session: activates a due index update and makes at
+#                 most one rebalancing trade. On a testnet mock deployment it also refreshes the
+#                 mock price feeds.
+#   index-update  Mondays: recomputes float shares from SEC filings and proposes them if they moved.
 #
-# Off until the repository variable AUTOMATION_ENABLED is "true" (set it after the mainnet deploy).
-# Secrets: KEEPER_KEY (a wallet with a little ETH on Base, nothing else), UPDATER_KEY (the
-# rebalancer's updater; its proposals wait 7 days and the owner can cancel them), BASE_RPC_URL
-# (optional). Variable: SEC_USER_AGENT ("Name email", as SEC asks of automated clients).
+# Each job runs for the chains listed in a repository variable (space-separated), and does nothing
+# while it is empty:
+#   KEEPER_CHAINS  e.g. "84532" (Base Sepolia), later "84532 8453" (plus Base mainnet)
+#   INDEX_CHAINS   e.g. "8453"
+# Every listed chain needs contracts/deployments/<chainId>.json committed.
+#
+# Secrets: KEEPER_KEY (a wallet holding only gas money), UPDATER_KEY (the rebalancer's updater:
+# its proposals wait 7 days and the owner can cancel them), BASE_RPC_URL and BASE_SEPOLIA_RPC_URL
+# (optional; the public RPCs rate-limit). Variable SEC_USER_AGENT: "Name email", as SEC asks.
 name: automation
 
 on:
@@ -25,7 +32,7 @@ concurrency:
 
 jobs:
   keeper:
-    if: vars.AUTOMATION_ENABLED == 'true' && (github.event.schedule == '*/10 14-19 * * 1-5' || inputs.job == 'keeper')
+    if: vars.KEEPER_CHAINS != '' && (github.event.schedule == '*/10 14-19 * * 1-5' || inputs.job == 'keeper')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,13 +42,25 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node scripts/keeper.mjs --chain 8453
+      - name: keeper
         env:
+          CHAINS: ${{ vars.KEEPER_CHAINS }}
           KEEPER_KEY: ${{ secrets.KEEPER_KEY }}
-          RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+        run: |
+          [ -n "$KEEPER_KEY" ] || { echo "::error::KEEPER_KEY is not set"; exit 1; }
+          status=0
+          for chain in $CHAINS; do
+            echo "::group::chain $chain"
+            case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
+            RPC_URL=$rpc node scripts/keeper.mjs --chain "$chain" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
 
   index-update:
-    if: vars.AUTOMATION_ENABLED == 'true' && (github.event.schedule == '0 15 * * 1' || inputs.job == 'index-update')
+    if: vars.INDEX_CHAINS != '' && (github.event.schedule == '0 15 * * 1' || inputs.job == 'index-update')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -51,8 +70,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node scripts/index-update.mjs --chain 8453
+      - name: index-update
         env:
+          CHAINS: ${{ vars.INDEX_CHAINS }}
           UPDATER_KEY: ${{ secrets.UPDATER_KEY }}
-          RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
+        run: |
+          [ -n "$UPDATER_KEY" ] || { echo "::error::UPDATER_KEY is not set"; exit 1; }
+          status=0
+          for chain in $CHAINS; do
+            echo "::group::chain $chain"
+            case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
+            RPC_URL=$rpc node scripts/index-update.mjs --chain "$chain" || status=1
+            echo "::endgroup::"
+          done
+          exit $status

@@ -43,7 +43,7 @@ The fund weights like the S&P 500 (which Vanguard's VOO tracks): float-adjusted 
 - **Splits** don't disturb anything: the index stores each float count with the token `multiplier()` it was counted at, and weighs a company as `floatShares × price / multiplier`.
 - **Trades** are made by anyone calling `Rebalancer.rebalance(sell, buy)`; `scripts/keeper.mjs` does it. The contract checks `sell` is overweight and `buy` underweight at Chainlink prices, sizes the trade (at most 1% of NAV, at least 0.05%, 30 minutes apart), and asks the fund to swap with a minimum output of the oracle value minus 0.5%. The swap goes stock → USDC → stock through Aerodrome Slipstream pools, directly (no router).
 - **Market hours only.** Trades run on weekdays 14:30–20:00 UTC (the US session under both EST and EDT) and only on prices updated in the last 6 hours, so weekend and holiday DEX prices are never traded against stale feeds.
-- **Automation:** `.github/workflows/automation.yml` runs the keeper every 10 minutes in the session and the index update weekly, once `AUTOMATION_ENABLED` is set.
+- **Automation:** `.github/workflows/automation.yml` runs the keeper every 10 minutes in the session and the index update weekly, for the chains listed in the `KEEPER_CHAINS` and `INDEX_CHAINS` repository variables. On a testnet mock deployment the keeper also refreshes the mock price feeds.
 - **Trust:** the Chainlink feeds set each trade's minimum output, so a wrong price means trading at that wrong price, at most 1% of NAV per 30 minutes until someone calls `disableRebalancer()`. The updater is bounded by the 7-day delay and the owner's cancel, and the owner by the 7-day delay on a new rebalancer. A holder who disagrees with any change can redeem in kind before it applies.
 
 ## Repository layout
@@ -105,7 +105,7 @@ See [`docs/LAUNCH.md`](docs/LAUNCH.md). In short:
 3. Run `forge script script/Deploy.s.sol` with `CHIP_ADDRESS`.
 4. Seed with `scripts/seed.sh`.
 5. Redeploy the site.
-6. Turn on the automation (keys in GitHub secrets, then `AUTOMATION_ENABLED=true`).
+6. Turn on the automation (keys in GitHub secrets, then add `8453` to `KEEPER_CHAINS` and `INDEX_CHAINS`).
 
 ## Why some things are the way they are
 

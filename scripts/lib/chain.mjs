@@ -1,6 +1,6 @@
 // Shared setup for the automation scripts: flags, the deployment file, viem clients.
 import { existsSync, readFileSync } from "node:fs";
-import { createPublicClient, createWalletClient, http, parseAbi } from "viem";
+import { createPublicClient, createWalletClient, http, nonceManager, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia, foundry } from "viem/chains";
 
@@ -20,8 +20,14 @@ export const rebalancerAbi = parseAbi([
   "function marketOpen() view returns (bool)",
   "function lastTradeAt() view returns (uint256)",
   "function cooldown() view returns (uint256)",
+  "function maxFeedAge() view returns (uint256)",
+  "function feeds() view returns (address[])",
 ]);
 export const stockAbi = parseAbi(["function multiplier() view returns (uint256)"]);
+export const feedAbi = parseAbi([
+  "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)",
+  "function setPrice(int256 answer)", // MockPriceFeed only
+]);
 
 export function flag(name) {
   return process.argv.includes(`--${name}`);
@@ -52,18 +58,13 @@ export function connect(keyVar) {
   const client = createPublicClient({ chain, transport });
   const key = process.env[keyVar] || undefined;
   const dryRun = flag("dry-run") || !key;
-  const account = key ? privateKeyToAccount(key) : undefined;
+  // Counts nonces locally: a load-balanced public RPC can report a stale one between two sends.
+  const account = key ? privateKeyToAccount(key, { nonceManager }) : undefined;
   const wallet = account ? createWalletClient({ chain, transport, account }) : undefined;
 
   /** Simulate, then (unless dry-run) send and wait. Returns the receipt or null. */
-  async function send(functionName, args = []) {
-    const { request } = await client.simulateContract({
-      address: deployment.rebalancer,
-      abi: rebalancerAbi,
-      functionName,
-      args,
-      account,
-    });
+  async function write(address, abi, functionName, args = []) {
+    const { request } = await client.simulateContract({ address, abi, functionName, args, account });
     if (dryRun) {
       log(`dry run: would call ${functionName}(${args.join(", ")})`);
       return null;
@@ -75,10 +76,11 @@ export function connect(keyVar) {
     return receipt;
   }
 
+  const send = (functionName, args) => write(deployment.rebalancer, rebalancerAbi, functionName, args);
   const read = (functionName, args = []) =>
     client.readContract({ address: deployment.rebalancer, abi: rebalancerAbi, functionName, args });
 
-  return { chain, client, deployment, dryRun, send, read };
+  return { chain, client, deployment, dryRun, send, write, read };
 }
 
 export function log(msg) {

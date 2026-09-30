@@ -122,9 +122,10 @@ The fund is on target at launch, so nothing trades until the index changes. Two 
 - **keeper**, every 10 minutes on weekdays 14:00–20:00 UTC: activates a due index update and makes at most one trade.
 - **index-update**, Mondays 15:00 UTC: re-reads SEC filings and proposes a new index when any company's float moved 0.5% or more. A move over 25% stops it for you to check.
 
-Set up in GitHub → Settings → Secrets and variables → Actions:
+Set up in GitHub → Settings → Secrets and variables → Actions (or with `gh secret set` / `gh variable set`):
 - Secrets: `KEEPER_KEY`, `UPDATER_KEY`, and optionally `BASE_RPC_URL` (the public RPC rate-limits).
-- Variables: `SEC_USER_AGENT` = `Your Name you@example.com`, then `AUTOMATION_ENABLED` = `true`.
+- Variables: `SEC_USER_AGENT` = `Your Name you@example.com`, then add `8453` to `KEEPER_CHAINS` and `INDEX_CHAINS` (space-separated; `84532` is Base Sepolia).
+- Commit `contracts/deployments/8453.json` first: the workflow reads it.
 
 Before enabling, run both once by hand without keys to see what they would do:
 
