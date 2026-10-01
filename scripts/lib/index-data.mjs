@@ -4,11 +4,12 @@
 //   sharesOutstanding (SEC EDGAR, latest filing) x listedFraction x iwf
 // listedFraction drops unlisted share classes (Alphabet and Meta Class B); EDGAR only reports their
 // total. iwf is the investable weight factor: the part not held by insiders and strategic holders.
-// Both live in contracts/basket/mag7.config.json and change rarely.
+// Both live in the fund's contracts/basket/<basket>.config.json and change rarely.
 import { readFileSync } from "node:fs";
+import { basketOf, fundId } from "./fund.mjs";
 
 const root = new URL("../..", import.meta.url).pathname;
-const configPath = `${root}contracts/basket/mag7.config.json`;
+export const configPath = `${root}contracts/basket/${basketOf(fundId())}.config.json`;
 
 // SEC asks automated clients to identify themselves: set SEC_USER_AGENT="Your Name you@example.com".
 const SEC_USER_AGENT = process.env.SEC_USER_AGENT || "bluechip-index";

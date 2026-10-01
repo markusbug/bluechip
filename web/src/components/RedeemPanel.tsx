@@ -3,7 +3,7 @@ import { useReadContract } from "wagmi";
 import type { Address } from "viem";
 import { formatUnits } from "viem";
 import { blueFundAbi } from "../abi";
-import { deployment, siteConfig } from "../config";
+import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
 import { explainError } from "../lib/errors";
@@ -20,7 +20,8 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
   const [error, setError] = useState<string>();
   const [hash, setHash] = useState<string>();
 
-  const d = deployment!;
+  const d = fund.config.deployment!;
+  const { symbol } = fund.config;
   const shares = parseAmount(amount, 18);
   const preview = useReadContract({
     address: d.fund,
@@ -30,7 +31,7 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
     query: { enabled: !!shares && shares > 0n },
   });
   const out = preview.data?.[1] ?? [];
-  const tooMuch = !!shares && shares > wallet.blue;
+  const tooMuch = !!shares && shares > wallet.shares;
   const value = shares && fund.navPerBlue ? (Number(shares) / 1e18) * fund.navPerBlue : undefined;
 
   async function redeem() {
@@ -45,7 +46,7 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
           : { address: d.fund, abi: blueFundAbi, functionName: "redeemExcept", args: [shares!, account, skip], label: "Redeem" };
       const tx = await runCalls(account, [call], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
       setHash(tx);
-      setMessage(`Redeemed ${fmt(shares!, 18)} BLUE for the stocks.`);
+      setMessage(`Redeemed ${fmt(shares!, 18)} ${symbol} for the stocks.`);
       setAmount("");
       onDone();
     } catch (e) {
@@ -59,9 +60,15 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
   const connected = !!wallet.address && wallet.onChain;
   return (
     <div>
-      <AmountInput label="BLUE to redeem" value={amount} onChange={setAmount} unit="BLUE" onMax={connected ? () => setAmount(formatUnits(wallet.blue, 18)) : undefined} />
+      <AmountInput
+        label={`${symbol} to redeem`}
+        value={amount}
+        onChange={setAmount}
+        unit={symbol}
+        onMax={connected ? () => setAmount(formatUnits(wallet.shares, 18)) : undefined}
+      />
       <p className="mt-2 text-sm text-muted">
-        {connected ? `You hold ${fmt(wallet.blue, 18)} BLUE. ` : ""}Redeeming is free and can never be paused.
+        {connected ? `You hold ${fmt(wallet.shares, 18)} ${symbol}. ` : ""}Redeeming is free and can never be paused.
         {value !== undefined && ` About ${usd(value)} of stock.`}
       </p>
 

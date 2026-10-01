@@ -30,10 +30,11 @@ runs = 10_000
 runs = 1024
 depth = 128
 
-# Public endpoints; pass --rpc-url <your provider> for anything heavier than a deploy.
+# `base` reads BASE_RPC_URL (put it in contracts/.env, which is not committed); Base Sepolia uses the
+# public endpoint.
 # Verify with: --verify --etherscan-api-key $ETHERSCAN_API_KEY (Etherscan v2 key covers Base).
 [rpc_endpoints]
-base = "https://mainnet.base.org"
+base = "${BASE_RPC_URL}"
 base_sepolia = "https://sepolia.base.org"
 localhost = "http://127.0.0.1:8545"
 

@@ -1,19 +1,24 @@
+import { funds } from "../config";
+
+/** "BLUE" while it's the only fund, "BLUE or BLUEAI" once there are more. */
+const token = new Intl.ListFormat("en", { type: "disjunction" }).format(funds.map((f) => f.symbol));
+
 const steps = [
   {
-    title: "Deposit the seven stocks, get BLUE",
+    title: `Deposit the stocks, get ${token}`,
     body: "Minting pulls each stock in the fund's current proportion. Deposits round in the fund's favour, so no one can mint cheaper than the holders before them.",
   },
   {
     title: "0.30% of each mint buys and burns CHIP",
-    body: "The fee is paid in freshly minted BLUE to the CHIP burner. The owner can lower it or raise it up to a hard cap of 1%. Changing who may trade the stocks takes 7 days' notice, so you can redeem first.",
+    body: "The fee is paid in freshly minted fund tokens to the fund's CHIP burner. The owner can lower it or raise it up to a hard cap of 1%. Changing who may trade the stocks takes 7 days' notice, so you can redeem first.",
   },
   {
     title: "The burner turns fees into burned CHIP",
-    body: "It redeems the fee BLUE for the stocks, sells them for USDC, buys CHIP in its trading pool and burns it. Burned CHIP is gone for good, so every mint shrinks the supply.",
+    body: "It redeems the fees for the stocks, sells them for USDC, buys CHIP in its trading pool and burns it. Burned CHIP is gone for good, so every mint shrinks the supply.",
   },
   {
-    title: "Redeem BLUE for the stocks, any time",
-    body: "No fee, no queue, no pause switch. If an issuer freezes one stock, you can leave it behind and still take the other six.",
+    title: `Redeem ${token} for the stocks, any time`,
+    body: "No fee, no queue, no pause switch. If an issuer freezes one stock, you can leave it behind and still take the rest.",
   },
 ];
 

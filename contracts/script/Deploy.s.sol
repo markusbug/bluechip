@@ -17,12 +17,13 @@ import {IPoolManager} from "../src/interfaces/IPoolManager.sol";
 ///         the stocks' Aerodrome USDC pools. With CHIP_ADDRESS (and its v4 pool key from
 ///         scripts/chip-pool.mjs) it also deploys the CHIP burner as the fee recipient; without it,
 ///         mint fees go to FEE_RECIPIENT (default: the owner) until script/DeployBurner.s.sol.
-///         Last comes the zap that mints BLUE for USDC or ETH through the same pools.
+///         Last comes the zap that mints the fund for USDC or ETH through the same pools.
+///         FUND=<id> deploys another fund from basket/<id>.json (default: BLUE, see DeploymentIO).
 ///         Never calls the stock tokens (they are chain-native and can't run in forge's simulator),
 ///         so seeding is a separate step: scripts/seed.sh.
 ///
 ///   [CHIP_ADDRESS=0x... CHIP_POOL_FEE=... CHIP_POOL_TICK_SPACING=... CHIP_POOL_HOOKS=0x...] \
-///   [OWNER=0x...] [UPDATER=0x...] [KEEPER=0x...] [MINT_FEE_BPS=30] [SUPPLY_CAP=...] \
+///   [FUND=blueai] [OWNER=0x...] [UPDATER=0x...] [KEEPER=0x...] [MINT_FEE_BPS=30] [SUPPLY_CAP=...] \
 ///   forge script script/Deploy.s.sol --rpc-url base --account deployer --broadcast --verify
 contract Deploy is DeploymentIO {
     function run() external returns (BlueFund fund, Rebalancer rebalancer, ChipBurner burner) {
@@ -58,6 +59,7 @@ contract Deploy is DeploymentIO {
         require(address(rebalancer) == fund.rebalancer(), "rebalancer address mismatch");
 
         _writeDeployment(
+            b,
             address(fund),
             address(burner),
             chip,
@@ -82,8 +84,8 @@ contract Deploy is DeploymentIO {
         address feeRecipient =
             withBurner ? vm.computeCreateAddress(deployer, nonce + 2) : vm.envOr("FEE_RECIPIENT", owner);
         return new BlueFund(
-            "Bluechip Index",
-            "BLUE",
+            b.tokenName,
+            b.tokenSymbol,
             b.addresses,
             b.units,
             owner,

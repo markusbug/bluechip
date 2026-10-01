@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createPublicClient, createWalletClient, http, nonceManager, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia, foundry } from "viem/chains";
+import { deploymentFile, fundId } from "./fund.mjs";
 
 const root = new URL("../..", import.meta.url).pathname;
 const chains = { [base.id]: base, [baseSepolia.id]: baseSepolia, [foundry.id]: foundry };
@@ -50,7 +51,7 @@ export function option(name, fallback) {
 }
 
 /**
- * Clients and the deployment for --chain (default Base). The signer comes from the env var
+ * Clients and the deployment for --chain (default Base) and --fund (default blue). The signer comes from the env var
  * `keyVar`; without one (or with --dry-run) the script only reads and simulates.
  */
 export function connect(keyVar) {
@@ -58,7 +59,7 @@ export function connect(keyVar) {
   const chain = chains[chainId];
   if (!chain) throw new Error(`unknown chain ${chainId}`);
   const rpc = option("rpc", process.env.RPC_URL || chain.rpcUrls.default.http[0]);
-  const path = `${root}contracts/deployments/${chainId}.json`;
+  const path = `${root}contracts/deployments/${deploymentFile(chainId, fundId())}`;
   if (!existsSync(path)) throw new Error(`no ${path}: deploy first`);
   const deployment = JSON.parse(readFileSync(path, "utf8"));
   if (!deployment.rebalancer || /^0x0+$/.test(deployment.rebalancer)) {

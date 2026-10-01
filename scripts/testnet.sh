@@ -13,6 +13,7 @@
 #   ACCOUNT=other RPC_URL=https://... scripts/testnet.sh
 #   KEYSTORE=path/to/keystore scripts/testnet.sh   # a keystore file instead of a named account
 #   REUSE=1 scripts/testnet.sh                # skip the deploy, test deployments/<chain>.json
+#   FUND=blueai scripts/testnet.sh            # another fund's basket (deployments/<chain>-blueai.json)
 #   BRAKE=1 scripts/testnet.sh                # also test disableRebalancer (leaves it off)
 #   HANDOVER_KEEPER=0x... scripts/testnet.sh  # afterwards, let that wallet (the GitHub keeper) burn
 #   PRIVATE_KEY=0x... RPC_URL=http://127.0.0.1:8545 scripts/testnet.sh   # local anvil
@@ -21,7 +22,9 @@ cd "$(dirname "$0")/.."
 
 RPC=${RPC_URL:-https://sepolia.base.org}
 CHAIN_ID=$(cast chain-id --rpc-url "$RPC")
-DEPLOYMENT=contracts/deployments/$CHAIN_ID.json
+FUND=${FUND:-blue}
+export FUND # DeployMocks reads it too
+if [[ $FUND == blue ]]; then DEPLOYMENT=contracts/deployments/$CHAIN_ID.json; else DEPLOYMENT=contracts/deployments/$CHAIN_ID-$FUND.json; fi
 [[ $CHAIN_ID == 8453 ]] && { echo "Refusing to run on Base mainnet." >&2; exit 1; }
 
 # The password goes only to the commands that sign, as a file: exported as ETH_PASSWORD, Foundry
@@ -136,7 +139,7 @@ else
 fi
 [[ -f $DEPLOYMENT ]] || { echo "No $DEPLOYMENT. Run without REUSE first." >&2; exit 1; }
 
-FUND=$(jq -r .fund "$DEPLOYMENT")
+FUND_ADDR=$(jq -r .fund "$DEPLOYMENT")
 BURNER=$(jq -r .burner "$DEPLOYMENT")
 CHIP=$(jq -r .chip "$DEPLOYMENT")
 REB=$(jq -r .rebalancer "$DEPLOYMENT")
@@ -147,12 +150,12 @@ mapfile -t SYMBOLS < <(jq -r '.symbols[]' "$DEPLOYMENT")
 N=${#TOKENS[@]}
 
 step "Wiring"
-check "fund's rebalancer is the deployed one" "'$(call "$FUND" "rebalancer()(address)" | lower)' == '${REB,,}'"
-check "rebalancer points at the fund" "'$(call "$REB" "fund()(address)" | lower)' == '${FUND,,}'"
-check "fund is seeded" "'$(call "$FUND" "seeded()(bool)")' == 'true'"
+check "fund's rebalancer is the deployed one" "'$(call "$FUND_ADDR" "rebalancer()(address)" | lower)' == '${REB,,}'"
+check "rebalancer points at the fund" "'$(call "$REB" "fund()(address)" | lower)' == '${FUND_ADDR,,}'"
+check "fund is seeded" "'$(call "$FUND_ADDR" "seeded()(bool)")' == 'true'"
 check "rebalancer's updater is the signer" "'$(call "$REB" "updater()(address)" | lower)' == '${ME,,}'"
-check "fund's fees go to the CHIP burner" "'$(call "$FUND" "feeRecipient()(address)" | lower)' == '${BURNER,,}'"
-check "burner points at the fund" "'$(call "$BURNER" "fund()(address)" | lower)' == '${FUND,,}'"
+check "fund's fees go to the CHIP burner" "'$(call "$FUND_ADDR" "feeRecipient()(address)" | lower)' == '${BURNER,,}'"
+check "burner points at the fund" "'$(call "$BURNER" "fund()(address)" | lower)' == '${FUND_ADDR,,}'"
 
 # ---------------------------------------------------------------- mint / redeem
 
@@ -160,23 +163,23 @@ step "Mint 1 BLUE"
 ONE=1000000000000000000
 send "$FAUCET" "drip(address,uint256)" "$ME" "$ONE"
 for t in "${TOKENS[@]}"; do
-  send "$t" "approve(address,uint256)" "$FUND" "$(cast max-uint)"
+  send "$t" "approve(address,uint256)" "$FUND_ADDR" "$(cast max-uint)"
 done
-to_minter=$(call_n 1 "$FUND" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
-fee=$(call_n 2 "$FUND" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
-blue0=$(call "$FUND" "balanceOf(address)(uint256)" "$ME")
-fees0=$(call "$FUND" "balanceOf(address)(uint256)" "$BURNER")
-send "$FUND" "mint(uint256,address)" "$ONE" "$ME"
-check "minter gets 1 BLUE minus the fee" "$(call "$FUND" "balanceOf(address)(uint256)" "$ME") == $blue0 + $to_minter"
-check "CHIP burner gets the 0.30% fee" "$(call "$FUND" "balanceOf(address)(uint256)" "$BURNER") == $fees0 + $fee and $fee == $ONE * 30 // 10000"
+to_minter=$(call_n 1 "$FUND_ADDR" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
+fee=$(call_n 2 "$FUND_ADDR" "previewMintFee(uint256)(uint256,uint256)" "$ONE")
+blue0=$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$ME")
+fees0=$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$BURNER")
+send "$FUND_ADDR" "mint(uint256,address)" "$ONE" "$ME"
+check "minter gets 1 BLUE minus the fee" "$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$ME") == $blue0 + $to_minter"
+check "CHIP burner gets the 0.30% fee" "$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$BURNER") == $fees0 + $fee and $fee == $ONE * 30 // 10000"
 
 step "Redeem 0.5 BLUE"
 HALF=500000000000000000
-mapfile -t OUT < <(cast_call "$FUND" "previewRedeem(uint256)(address[],uint256[])" "$HALF" --json |
+mapfile -t OUT < <(cast_call "$FUND_ADDR" "previewRedeem(uint256)(address[],uint256[])" "$HALF" --json |
   jq -r '.[1]' | tr -d '[] ' | tr ',' '\n')
 before=()
 for t in "${TOKENS[@]}"; do before+=("$(call "$t" "balanceOf(address)(uint256)" "$ME")"); done
-send "$FUND" "redeem(uint256,address)" "$HALF" "$ME"
+send "$FUND_ADDR" "redeem(uint256,address)" "$HALF" "$ME"
 for i in "${!TOKENS[@]}"; do
   check "${SYMBOLS[$i]} paid out pro rata" \
     "$(call "${TOKENS[$i]}" "balanceOf(address)(uint256)" "$ME") == ${before[$i]} + ${OUT[$i]} and ${OUT[$i]} > 0"
@@ -236,13 +239,13 @@ else
     [[ ${SYMBOLS[$buy]} == "${SYMBOLS[$((N - 1))]}" ]] && ok "buys the stock whose float was raised" ||
       bad "expected to buy ${SYMBOLS[$((N - 1))]}, plan buys ${SYMBOLS[$buy]}"
     nav0=$(call_n 4 "$REB" "valuation()(uint256[],uint256[],uint256[],uint256)")
-    hs0=$(call "$FUND" "holdings(address)(uint256)" "${TOKENS[$sell]}")
-    hb0=$(call "$FUND" "holdings(address)(uint256)" "${TOKENS[$buy]}")
+    hs0=$(call "$FUND_ADDR" "holdings(address)(uint256)" "${TOKENS[$sell]}")
+    hb0=$(call "$FUND_ADDR" "holdings(address)(uint256)" "${TOKENS[$buy]}")
     max_slip=$(call "$REB" "maxSlippageBps()(uint256)")
     send "$REB" "rebalance(uint256,uint256)" "$sell" "$buy"
     nav1=$(call_n 4 "$REB" "valuation()(uint256[],uint256[],uint256[],uint256)")
-    check "sold ${SYMBOLS[$sell]}" "$(call "$FUND" "holdings(address)(uint256)" "${TOKENS[$sell]}") < $hs0"
-    check "bought ${SYMBOLS[$buy]}" "$(call "$FUND" "holdings(address)(uint256)" "${TOKENS[$buy]}") > $hb0"
+    check "sold ${SYMBOLS[$sell]}" "$(call "$FUND_ADDR" "holdings(address)(uint256)" "${TOKENS[$sell]}") < $hs0"
+    check "bought ${SYMBOLS[$buy]}" "$(call "$FUND_ADDR" "holdings(address)(uint256)" "${TOKENS[$buy]}") > $hb0"
     check "trade is at most 1% of NAV" "$value <= $nav0 // 100 + 1"
     check "NAV cost within the slippage bound" "$nav0 - $nav1 <= $value * $max_slip // 10000 + 10**12"
     expect_revert "a second trade inside the cooldown" "CoolingDown(uint256)" "$REB" "rebalance(uint256,uint256)" "$sell" "$buy"
@@ -253,11 +256,11 @@ fi
 
 if [[ -n ${BRAKE:-} ]]; then
   step "Emergency brake"
-  send "$FUND" "disableRebalancer()"
-  check "rebalancer switched off" "'$(call "$FUND" "rebalancer()(address)")' == '0x0000000000000000000000000000000000000000'"
-  blue0=$(call "$FUND" "balanceOf(address)(uint256)" "$ME")
-  send "$FUND" "redeem(uint256,address)" 1000 "$ME"
-  check "redeem still works" "$(call "$FUND" "balanceOf(address)(uint256)" "$ME") == $blue0 - 1000"
+  send "$FUND_ADDR" "disableRebalancer()"
+  check "rebalancer switched off" "'$(call "$FUND_ADDR" "rebalancer()(address)")' == '0x0000000000000000000000000000000000000000'"
+  blue0=$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$ME")
+  send "$FUND_ADDR" "redeem(uint256,address)" 1000 "$ME"
+  check "redeem still works" "$(call "$FUND_ADDR" "balanceOf(address)(uint256)" "$ME") == $blue0 - 1000"
 fi
 
 # ---------------------------------------------------------------- hand over
@@ -272,7 +275,7 @@ fi
 
 step "Result: $passed passed, $failed failed"
 if [[ $CHAIN_ID == 84532 ]]; then
-  echo "fund        https://sepolia.basescan.org/address/$FUND"
+  echo "fund        https://sepolia.basescan.org/address/$FUND_ADDR"
   echo "rebalancer  https://sepolia.basescan.org/address/$REB"
 fi
 [[ $failed == 0 ]]

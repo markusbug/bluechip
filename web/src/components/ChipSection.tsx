@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { mockChipAbi } from "../abi";
-import { deployment, siteConfig } from "../config";
+import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
 import { explainError } from "../lib/errors";
@@ -11,11 +11,19 @@ import { Button, CopyButton, LinkButton, TxStatus } from "./ui";
 
 const INITIAL_SUPPLY = 100_000_000_000n * 10n ** 18n;
 
-export function ChipSection({ fund, wallet, onDone }: { fund: FundState; wallet: WalletState; onDone: () => void }) {
+/** Each fund has its own burner; the stats add them up. */
+export function ChipSection({ funds, wallet, onDone }: { funds: FundState[]; wallet: WalletState; onDone: () => void }) {
   const chip = siteConfig.chipAddress;
-  const burner = deployment?.burner && !/^0x0+$/.test(deployment.burner) ? deployment.burner : undefined;
-  const burnedPct = Number((fund.chipBurned * 1_000_000n) / INITIAL_SUPPLY) / 10_000;
-  const pendingUsd = fund.navPerBlue !== undefined ? (Number(fund.pendingFees) / 1e18) * fund.navPerBlue : undefined;
+  const withBurner = funds.flatMap((f) => {
+    const burner = f.config.deployment?.burner;
+    return burner && !/^0x0+$/.test(burner) ? [{ fund: f, burner }] : [];
+  });
+  const chipBurned = withBurner.reduce((s, b) => s + b.fund.chipBurned, 0n);
+  const burnedPct = Number((chipBurned * 1_000_000n) / INITIAL_SUPPLY) / 10_000;
+  const pendingValues = withBurner.map(({ fund }) => (fund.navPerBlue !== undefined ? (Number(fund.pendingFees) / 1e18) * fund.navPerBlue : undefined));
+  const pendingUsd = pendingValues.every((v) => v !== undefined) ? pendingValues.reduce((s, v) => s! + v!, 0) : undefined;
+  const symbols = new Intl.ListFormat("en", { type: "disjunction" }).format(funds.map((f) => f.config.symbol));
+  const mintFeeBps = funds[0].mintFeeBps;
 
   return (
     <section id="chip" className="scroll-mt-16 bg-blue-deep text-white">
@@ -24,7 +32,7 @@ export function ChipSection({ fund, wallet, onDone }: { fund: FundState; wallet:
           <div className="min-w-0">
             <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Every mint burns $CHIP.</h2>
             <p className="mt-4 max-w-lg text-white/75">
-              Every BLUE minted pays {(fund.mintFeeBps / 100).toFixed(2)}% to the CHIP burner. It redeems that BLUE for the stocks,
+              Every {symbols} minted pays {(mintFeeBps / 100).toFixed(2)}% to a CHIP burner. It redeems those fees for the stocks,
               sells them for USDC, buys CHIP in its trading pool and burns it. Burned CHIP is gone for good, so the supply only
               shrinks as the fund grows.
             </p>
@@ -40,26 +48,42 @@ export function ChipSection({ fund, wallet, onDone }: { fund: FundState; wallet:
           </div>
 
           <div className="min-w-0 rounded-[20px] bg-white p-5 text-ink sm:p-7 dark:bg-surface">
-            {burner ? (
+            {withBurner.length > 0 ? (
               <>
                 <dl className="grid grid-cols-2 gap-6">
                   <div>
                     <dt className="text-sm text-muted">CHIP burned</dt>
-                    <dd className="mt-1 font-display text-2xl">{fmt(fund.chipBurned, 18, 0)}</dd>
+                    <dd className="mt-1 font-display text-2xl">{fmt(chipBurned, 18, 0)}</dd>
                     <dd className="text-xs text-muted">{burnedPct.toFixed(4)}% of the 100B supply</dd>
                   </div>
                   <div>
                     <dt className="text-sm text-muted">Fees waiting to burn</dt>
-                    <dd className="mt-1 font-display text-2xl">{fmt(fund.pendingFees, 18, 6)} BLUE</dd>
-                    <dd className="text-xs text-muted">{pendingUsd !== undefined ? usd(pendingUsd) : ""}</dd>
+                    {withBurner.length === 1 ? (
+                      <dd className="mt-1 font-display text-2xl">
+                        {fmt(withBurner[0].fund.pendingFees, 18, 6)} {withBurner[0].fund.config.symbol}
+                      </dd>
+                    ) : (
+                      <dd className="mt-1 font-display text-2xl">{pendingUsd !== undefined ? usd(pendingUsd) : "–"}</dd>
+                    )}
+                    <dd className="text-xs text-muted">
+                      {withBurner.length === 1
+                        ? pendingUsd !== undefined
+                          ? usd(pendingUsd)
+                          : ""
+                        : withBurner.map(({ fund }) => `${fmt(fund.pendingFees, 18, 6)} ${fund.config.symbol}`).join(" + ")}
+                    </dd>
                   </div>
                 </dl>
                 <p className="mt-6 text-sm text-muted">
                   A keeper runs the burn during US market hours once enough fees have built up. It can set the price it accepts
                   but can't send the fees anywhere else.
                 </p>
-                <div className="mt-4 [&_a]:w-full">
-                  <LinkButton href={siteConfig.explorerAddress(burner)}>See the burns on the explorer</LinkButton>
+                <div className="mt-4 grid gap-2 [&_a]:w-full">
+                  {withBurner.map(({ fund, burner }) => (
+                    <LinkButton key={burner} href={siteConfig.explorerAddress(burner)}>
+                      {withBurner.length === 1 ? "See the burns on the explorer" : `See ${fund.config.symbol}'s burns on the explorer`}
+                    </LinkButton>
+                  ))}
                 </div>
                 {siteConfig.isMock && wallet.address && wallet.onChain && <Faucet wallet={wallet} onDone={onDone} />}
               </>

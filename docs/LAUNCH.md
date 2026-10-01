@@ -29,7 +29,7 @@ Every step below is outward-facing or spends money. Run them yourself, one at a 
    ```
 
    This reads share counts from EDGAR and live Chainlink prices, and writes `contracts/basket/mag7.json` plus `web/src/data/stocks.json`. It targets 1 BLUE ≈ $100, and the same float shares become the rebalancer's first index, so the fund starts on target.
-3. Configure the site. In `web/.env` set `VITE_CHAIN=base`, `VITE_SITE_URL=https://bluechip.markushaas.com` and `VITE_GITHUB_URL`.
+3. Configure the site. In `web/.env` set `VITE_CHAIN=base`, `VITE_SITE_URL=https://onbluechip.com` and `VITE_GITHUB_URL`.
 4. Deploy it:
 
    ```bash
@@ -38,7 +38,7 @@ Every step below is outward-facing or spends money. Run them yourself, one at a 
    npm run deploy:site
    ```
 
-   Firebase console → Hosting → *Add custom domain* → `bluechip.markushaas.com`. Add the TXT and A records it shows, then wait for the certificate.
+   Firebase console → Hosting → *Add custom domain* → `onbluechip.com` (and `www.onbluechip.com`, redirecting to it). Add the TXT and A records it shows, then wait for the certificate. CHIP launched while the site lived at `bluechip.markushaas.com`, and its Bankr metadata still points there, so keep that domain on the same Hosting site, set to redirect to `onbluechip.com`.
 
 The site shows the planned basket at live prices, with "Not live yet" in place of fund stats. It serves `/chip.png` for the launch image.
 
@@ -113,6 +113,24 @@ cast send <zap> "mintWithEth(uint256,address,uint256)" 10000000000000000 <you> <
 
 Commit `contracts/deployments/8453.json`.
 
+### 3d. Open a BLUE/USDC market
+
+`CreateBluePool.s.sol` creates an Aerodrome Slipstream BLUE/USDC pool (0.05% fee) at BLUE's NAV (the rebalancer's Chainlink valuation over total supply) and adds a position about ±20% around it, which the broadcaster gets as an NFT. It spends equal dollar values of BLUE and USDC: the smaller of `BLUE_AMOUNT` and `USDC_AMOUNT` (default: your balances) sets the size. It approves exactly those amounts and stops if an existing pool trades more than 1% off NAV. Run it while the price feeds are fresh, around the US session.
+
+```bash
+cd contracts
+# BLUE for the pool: mint it through the zap (the quote is USDC in for `shares`, before slippage)
+cast call <zap> "quoteMint(uint256)(uint256,uint256)" 32000000000000000 --rpc-url base
+cast send <usdc> "approve(address,uint256)" <zap> <USDC quote + 2%> --account deployer --rpc-url base
+cast send <zap> "mintWithUsdc(uint256,address,uint256,uint256)" 32000000000000000 <you> <USDC quote + 2%> <unix deadline> \
+  --account deployer --rpc-url base
+
+BLUE_AMOUNT=50000000000000000 USDC_AMOUNT=5000000 \
+forge script script/CreateBluePool.s.sol --rpc-url base --account deployer --broadcast
+```
+
+This writes `bluePool` to `deployments/8453.json`. Arbitrage keeps the pool near NAV only as far as someone bothers: a thin pool moves several percent on a $1 trade. Add liquidity later through Aerodrome's UI or by running the script again.
+
 ## 4. Seed
 
 The owner makes the first mint at the fixed seed ratio, and 0.001 BLUE of it is locked at `0xdead` forever.
@@ -124,7 +142,7 @@ The owner makes the first mint at the fixed seed ratio, and 0.001 BLUE of it is 
    DRY_RUN=1 SHARES=1 scripts/seed.sh
    ```
 
-3. Seed. This runs 7 approvals, then `seed`, all through `cast send`:
+3. Seed. This runs one approval per stock, then `seed`, all through `cast send`:
 
    ```bash
    SHARES=1 scripts/seed.sh --account deployer
@@ -173,6 +191,39 @@ The first index change is also the first time trades touch the real stock tokens
 - **Emergency brake:** if prices or trades look wrong, `cast send <fund> "disableRebalancer()" --account deployer --rpc-url base`. Mint and redeem keep working.
 - **Yearly:** after proxy season, check `listedFraction` and `iwf` in the config and let the next index update pick them up.
 - **Supply cap:** raise it as liquidity grows: `cast send <fund> "setSupplyCap(uint256)" <wei> --account deployer --rpc-url base`.
+
+## 8. Launch another fund (Bluechip AI, $BLUEAI)
+
+Every fund is its own set of the same contracts: fund, rebalancer, swapper, CHIP burner and zap. `FUND=<id>` (or `--fund <id>` for the Node scripts) picks which one a command works on. BLUE keeps its original file names, so leaving it out means BLUE:
+
+| | Basket config | Deployment |
+|---|---|---|
+| `blue` (default) | `contracts/basket/mag7.config.json` | `contracts/deployments/8453.json` |
+| `blueai` | `contracts/basket/blueai.config.json` | `contracts/deployments/8453-blueai.json` |
+
+BLUEAI holds NVDA, MSFT, GOOGL, AMZN, META and SNDK, weighted the same way as BLUE. Steps 1 to 6 again, for `blueai`:
+
+1. **Basket.** Check the `iwf` of SNDKc (see the config's `note`: it is 1.0 if Western Digital has sold its retained stake), then regenerate at live prices just before deploying:
+
+   ```bash
+   SEC_USER_AGENT="Your Name you@example.com" npm run basket -- --fund blueai
+   ```
+
+   This writes `contracts/basket/blueai.json` and adds any new stock to `web/src/data/stocks.json` and `web/public/icons/`, keeping the others.
+2. **Deploy.** Same command as step 3 with `FUND=blueai` and the same CHIP pool key, keeper and updater (one keeper and one updater wallet serve every fund):
+
+   ```bash
+   cd contracts
+   FUND=blueai CHIP_ADDRESS=<chip> CHIP_POOL_FEE=8388608 CHIP_POOL_TICK_SPACING=200 CHIP_POOL_HOOKS=<hooks> \
+   KEEPER=<keeper> UPDATER=<updater> \
+   forge script script/Deploy.s.sol --rpc-url base --account deployer --broadcast --verify
+   ```
+
+   It deploys the fund ("Bluechip AI", `BLUEAI`), a swapper over this basket's pools, the rebalancer, a CHIP burner as the fee recipient (0.30%), and the zap. Commit `contracts/deployments/8453-blueai.json`. `8453.json` is not touched.
+3. **Seed.** Buy the six stocks, then run `FUND=blueai DRY_RUN=1 SHARES=1 scripts/seed.sh` followed by `FUND=blueai SHARES=1 scripts/seed.sh --account deployer`. The zap can only mint once the fund is seeded.
+4. **Optional pool.** `FUND=blueai forge script script/CreateBluePool.s.sol ...` as in 3d, for a BLUEAI/USDC market.
+5. **Site.** `npm run deploy:site`. The site lists a fund once its deployment file exists, so BLUEAI appears next to BLUE with a fund picker; `?fund=blueai` links straight to it.
+6. **Automation.** Set the repository variable `FUNDS` to `blue blueai`. Both jobs then loop over every fund on every listed chain, skipping a fund with no deployment file there. Dry-run first: `npm run keeper -- --fund blueai --dry-run` and `npm run index:update -- --fund blueai --dry-run`.
 
 ## Testnet (Base Sepolia)
 

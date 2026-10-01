@@ -9,10 +9,11 @@ const shares = (units: bigint, decimals: number, multiplier: bigint) => Number(f
 
 export function Holdings({ fund }: { fund: FundState }) {
   const rows = [...fund.constituents].sort((a, b) => b.weight - a.weight);
+  const { symbol } = fund.config;
   return (
     <section id="fund" className="scroll-mt-24 py-12">
       <div className="max-w-2xl">
-        <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">What one BLUE holds</h2>
+        <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">What one {symbol} holds</h2>
         <p className="mt-3 text-muted">
           Shares of each company in proportion to its free float, the way the S&P 500 weights. Price moves keep
           that mix on target by themselves. When share counts change, a new index is posted with 7 days' notice and
@@ -27,7 +28,7 @@ export function Holdings({ fund }: { fund: FundState }) {
             <tr className="border-b border-line">
               <th className="px-5 py-3 font-medium">Company</th>
               <th className="px-5 py-3 font-medium">Weight</th>
-              <th className="px-5 py-3 text-right font-medium">Shares per BLUE</th>
+              <th className="px-5 py-3 text-right font-medium">Shares per {symbol}</th>
               <th className="px-5 py-3 text-right font-medium">Price</th>
               <th className="px-5 py-3 text-right font-medium">Fund holds</th>
             </tr>

@@ -2,7 +2,7 @@ import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi, parseAbi } from "viem";
 import { blueFundAbi, chipBurnerAbi } from "../abi";
-import { basket, deployment, siteConfig, stockMeta } from "../config";
+import { siteConfig, stockMeta, type FundConfig } from "../config";
 
 const feedAbi = parseAbi([
   "function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
@@ -16,7 +16,7 @@ export type Constituent = {
   name: string;
   icon: string | null;
   decimals: number;
-  /** Token units behind one whole BLUE. */
+  /** Token units behind one whole fund share. */
   unitsPerBlue: bigint;
   holdings: bigint;
   /** WAD; dividends and splits move this, not balances. */
@@ -30,6 +30,7 @@ export type Constituent = {
 };
 
 export type FundState = {
+  config: FundConfig;
   deployed: boolean;
   seeded: boolean;
   constituents: Constituent[];
@@ -39,23 +40,23 @@ export type FundState = {
   mintFeeBps: number;
   navPerBlue: number | undefined;
   aum: number | undefined;
-  /** Fee BLUE waiting in the CHIP burner. */
+  /** Fee shares of this fund waiting in its CHIP burner. */
   pendingFees: bigint;
-  /** CHIP the burner has bought and burned so far. */
+  /** CHIP this fund's burner has bought and burned so far. */
   chipBurned: bigint;
   chipSupply: bigint;
   isLoading: boolean;
   refetch: () => void;
 };
 
-const snapshotPrice = (symbol: string) => basket.tokens.find((t) => t.symbol === symbol)?.price;
-
 /**
- * Everything public about the fund, read in one multicall and refreshed every 15s.
- * Before deployment it shows the planned basket from contracts/basket/mag7.json.
+ * Everything public about a fund, read in one multicall and refreshed every 15s.
+ * Before deployment it shows the planned basket from its contracts/basket/ file.
  */
-export function useFund(): FundState {
-  const d = deployment;
+export function useFund(config: FundConfig): FundState {
+  const d = config.deployment;
+  const basket = config.basket;
+  const snapshotPrice = (symbol: string) => basket.tokens.find((t) => t.symbol === symbol)?.price;
   const n = d?.tokens.length ?? 0;
   const fund = d ? { address: d.fund, abi: blueFundAbi } : undefined;
   const hasFeeds = !!d && d.feeds.length === n && n > 0;
@@ -110,6 +111,7 @@ export function useFund(): FundState {
     });
     const nav = navAndWeights(constituents);
     return {
+      config,
       deployed: false,
       seeded: false,
       constituents,
@@ -154,6 +156,7 @@ export function useFund(): FundState {
   const navPerBlue = navAndWeights(constituents);
 
   return {
+    config,
     deployed: true,
     seeded: ok<boolean>(3, false),
     constituents,
@@ -170,7 +173,7 @@ export function useFund(): FundState {
   };
 }
 
-/** NAV of one BLUE in USD; fills in each constituent's weight as a side effect. */
+/** NAV of one fund share in USD; fills in each constituent's weight as a side effect. */
 function navAndWeights(constituents: Constituent[]): number | undefined {
   const values = constituents.map((c) => (c.price === undefined ? undefined : (Number(c.unitsPerBlue) / 10 ** c.decimals) * c.price));
   if (!values.every((v) => v !== undefined)) return undefined;

@@ -1,7 +1,7 @@
 import { useAccount, useBalance, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi } from "viem";
-import { deployment, siteConfig } from "../config";
+import { siteConfig, type FundConfig } from "../config";
 
 export type WalletState = {
   address: Address | undefined;
@@ -9,7 +9,8 @@ export type WalletState = {
   /** Per constituent, same order as the fund. */
   balances: bigint[];
   allowances: bigint[];
-  blue: bigint;
+  /** The fund's own token. */
+  shares: bigint;
   chip: bigint;
   /** For minting through the zap. */
   eth: bigint;
@@ -22,10 +23,10 @@ export type WalletState = {
   refetch: () => void;
 };
 
-/** The connected wallet's stocks, allowances to the fund, BLUE and CHIP, and its ETH, USDC and WETH for the zap. */
-export function useWallet(): WalletState {
+/** The connected wallet's stocks, allowances to the fund, fund shares and CHIP, and its ETH, USDC and WETH for the fund's zap. */
+export function useWallet(config: FundConfig): WalletState {
   const { address, chainId } = useAccount();
-  const d = deployment;
+  const d = config.deployment;
   const n = d?.tokens.length ?? 0;
   const chip = siteConfig.chipAddress;
   // What the zap takes besides ETH: a balance and an allowance to the zap for each.
@@ -61,7 +62,7 @@ export function useWallet(): WalletState {
   return {
     address,
     onChain: chainId === siteConfig.chain.id,
-    blue: val(0),
+    shares: val(0),
     chip: chip ? val(1) : 0n,
     balances: Array.from({ length: n }, (_, i) => val(o + i)),
     allowances: Array.from({ length: n }, (_, i) => val(o + n + i)),

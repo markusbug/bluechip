@@ -10,7 +10,7 @@
 // company stops the script for a human to look at (--force proposes anyway). A jump that large is
 // usually a stock split that EDGAR has not caught up with yet, or bad data.
 import { connect, flag, log, stockAbi } from "./lib/chain.mjs";
-import { floatShares, loadConfig } from "./lib/index-data.mjs";
+import { configPath, floatShares, loadConfig } from "./lib/index-data.mjs";
 
 const MIN_CHANGE = 0.005;
 const MAX_CHANGE = 0.25;
@@ -22,7 +22,7 @@ const fetched = await floatShares(cfg);
 // Deployment order is the fund's constituent order; match the config by symbol.
 const next = deployment.symbols.map((symbol) => {
   const row = fetched.find((r) => r.symbol === symbol);
-  if (!row) throw new Error(`${symbol} is not in mag7.config.json`);
+  if (!row) throw new Error(`${symbol} is not in ${configPath}`);
   return row;
 });
 const multipliers = await Promise.all(

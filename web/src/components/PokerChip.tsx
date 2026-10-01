@@ -77,3 +77,25 @@ export function ChipMark({ size = 28 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A small, static chip whose edge inserts are the weights, for fund cards. */
+export function MiniChip({ weights, size = 64 }: { weights: number[]; size?: number }) {
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  const gap = 0.06;
+  let a = -Math.PI / 2;
+  const arcs = weights.map((w) => {
+    const span = (w / total) * TAU;
+    const d = arc(32, 32, 26, a + gap / 2, a + span - gap / 2);
+    a += span;
+    return d;
+  });
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden className="shrink-0">
+      <circle cx="32" cy="32" r="31.5" fill="var(--blue)" />
+      {arcs.map((d, i) => (
+        <path key={i} d={d} fill="none" stroke={i % 2 ? "#b9ccff" : "#ffffff"} strokeWidth="7" />
+      ))}
+      <circle cx="32" cy="32" r="18" fill="var(--blue-deep)" />
+    </svg>
+  );
+}

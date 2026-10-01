@@ -8,7 +8,9 @@
 # while it is empty:
 #   KEEPER_CHAINS  e.g. "84532" (Base Sepolia), later "84532 8453" (plus Base mainnet)
 #   INDEX_CHAINS   e.g. "8453"
-# Every listed chain needs contracts/deployments/<chainId>.json committed.
+# and for each fund in FUNDS (default "blue"; with BLUEAI live, "blue blueai"). A (chain, fund) pair
+# without a committed deployment file (contracts/deployments/<chainId>.json for blue,
+# <chainId>-<fund>.json otherwise) is skipped. Every fund uses the same keeper and updater wallets.
 #
 # Secrets: KEEPER_KEY (a wallet holding only gas money), UPDATER_KEY (the rebalancer's updater:
 # its proposals wait 7 days and the owner can cancel them), BASE_RPC_URL and BASE_SEPOLIA_RPC_URL
@@ -45,6 +47,7 @@ jobs:
       - name: keeper
         env:
           CHAINS: ${{ vars.KEEPER_CHAINS }}
+          FUNDS: ${{ vars.FUNDS || 'blue' }}
           KEEPER_KEY: ${{ secrets.KEEPER_KEY }}
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
@@ -52,10 +55,14 @@ jobs:
           [ -n "$KEEPER_KEY" ] || { echo "::error::KEEPER_KEY is not set"; exit 1; }
           status=0
           for chain in $CHAINS; do
-            echo "::group::chain $chain"
             case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
-            RPC_URL=$rpc node scripts/keeper.mjs --chain "$chain" || status=1
-            echo "::endgroup::"
+            for fund in $FUNDS; do
+              if [ "$fund" = blue ]; then file=$chain.json; else file=$chain-$fund.json; fi
+              [ -f "contracts/deployments/$file" ] || continue
+              echo "::group::chain $chain, fund $fund"
+              RPC_URL=$rpc node scripts/keeper.mjs --chain "$chain" --fund "$fund" || status=1
+              echo "::endgroup::"
+            done
           done
           exit $status
 
@@ -73,6 +80,7 @@ jobs:
       - name: index-update
         env:
           CHAINS: ${{ vars.INDEX_CHAINS }}
+          FUNDS: ${{ vars.FUNDS || 'blue' }}
           UPDATER_KEY: ${{ secrets.UPDATER_KEY }}
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
@@ -81,9 +89,13 @@ jobs:
           [ -n "$UPDATER_KEY" ] || { echo "::error::UPDATER_KEY is not set"; exit 1; }
           status=0
           for chain in $CHAINS; do
-            echo "::group::chain $chain"
             case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
-            RPC_URL=$rpc node scripts/index-update.mjs --chain "$chain" || status=1
-            echo "::endgroup::"
+            for fund in $FUNDS; do
+              if [ "$fund" = blue ]; then file=$chain.json; else file=$chain-$fund.json; fi
+              [ -f "contracts/deployments/$file" ] || continue
+              echo "::group::chain $chain, fund $fund"
+              RPC_URL=$rpc node scripts/index-update.mjs --chain "$chain" --fund "$fund" || status=1
+              echo "::endgroup::"
+            done
           done
           exit $status

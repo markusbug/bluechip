@@ -1,9 +1,9 @@
 {
-  "name": "Bluechip 7",
-  "tokenName": "Bluechip Index",
-  "tokenSymbol": "BLUE",
+  "name": "Bluechip AI",
+  "tokenName": "Bluechip AI",
+  "tokenSymbol": "BLUEAI",
   "targetUsdPerShare": 100,
-  "note": "Float-adjusted market-cap weighting, like the S&P 500 (and so Vanguard's VOO). Float shares = sharesOutstanding (fetched live from SEC EDGAR by `cik`) x listedFraction x iwf. listedFraction: the share of the company's stock in listed classes S&P counts (Alphabet: Class A + C, not B; Meta: Class A, not B); EDGAR only reports their total. iwf: S&P's investable weight factor, the fraction of listed shares not held by officers, directors and other strategic holders. Both are estimates from proxy statements; check them yearly (after proxy season) or after a large insider change. pool: the stock's USDC pool on Aerodrome Slipstream, used by the rebalancer.",
+  "note": "The AI and compute companies: chips, cloud, models and memory. Float-adjusted market-cap weighting, like the S&P 500 (and so Vanguard's VOO). Float shares = sharesOutstanding (fetched live from SEC EDGAR by `cik`) x listedFraction x iwf. listedFraction: the share of the company's stock in listed classes S&P counts (Alphabet: Class A + C, not B; Meta: Class A, not B); EDGAR only reports their total. iwf: S&P's investable weight factor, the fraction of listed shares not held by officers, directors and other strategic holders. Both are estimates from proxy statements; check them yearly (after proxy season) or after a large insider change. pool: the stock's USDC pool on Aerodrome Slipstream, used by the rebalancer. SNDKc: Sandisk (spun off from Western Digital in 2025). WDC kept up to 19.9% at the spin-off and filed a Schedule 13G/A on 2026-05-15; iwf 1.0 assumes that stake is sold. If WDC still holds it, use 0.8.",
   "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   "constituents": [
     {
@@ -14,15 +14,6 @@
       "cik": 1045810,
       "listedFraction": 1.0,
       "iwf": 0.96
-    },
-    {
-      "symbol": "AAPLc",
-      "address": "0xb200000000000000000000C2e324d24d7eEcd1fb",
-      "feed": "0x787f13dEa48Db0897CbCDD985de77809D837F988",
-      "pool": "0xa3b1e3f9747065e2073722ff4c9027d3ea4994f0",
-      "cik": 320193,
-      "listedFraction": 1.0,
-      "iwf": 1.0
     },
     {
       "symbol": "MSFTc",
@@ -61,13 +52,13 @@
       "iwf": 0.99
     },
     {
-      "symbol": "TSLAc",
-      "address": "0xb2000000000000000000001e800a7f5189430cD0",
-      "feed": "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
-      "pool": "0x469337fdcc5e8f38e2e4b670b04f57865d13a7bb",
-      "cik": 1318605,
+      "symbol": "SNDKc",
+      "address": "0xb200000000000000000000397293Cb8cda9a10c5",
+      "feed": "0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA",
+      "pool": "0x5A8236f575471e7BfCA2C8462a200c28f737246E",
+      "cik": 2023554,
       "listedFraction": 1.0,
-      "iwf": 0.76
+      "iwf": 1.0
     }
   ]
 }

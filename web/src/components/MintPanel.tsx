@@ -3,7 +3,7 @@ import { useReadContract } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi } from "viem";
 import { blueFundAbi, mockFaucetAbi } from "../abi";
-import { deployment, siteConfig } from "../config";
+import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
 import { explainError } from "../lib/errors";
@@ -27,7 +27,8 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
   const [error, setError] = useState<string>();
   const [hash, setHash] = useState<string>();
 
-  const d = deployment!;
+  const d = fund.config.deployment!;
+  const { symbol } = fund.config;
   const hasZap = !!d.zap && !!d.usdc;
   const [pay, setPay] = useState<PayToken | "stocks">(hasZap ? "usdc" : "stocks");
   const shares = parseAmount(amount, 18);
@@ -100,7 +101,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
         tx = await runCalls(account, [...fallback, mintWithPermits], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
       }
       setHash(tx);
-      setMessage(`Minted ${fmt(shares! - fee, 18)} BLUE.`);
+      setMessage(`Minted ${fmt(shares! - fee, 18)} ${symbol}.`);
       onDone();
     } catch (e) {
       setMessage(undefined);
@@ -136,10 +137,10 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
 
   return (
     <div>
-      <AmountInput label="BLUE to mint" value={amount} onChange={setAmount} unit="BLUE" />
+      <AmountInput label={`${symbol} to mint`} value={amount} onChange={setAmount} unit={symbol} />
       <p className="mt-2 text-sm text-muted">
         {value !== undefined && `Worth about ${usd(value)}. `}
-        You receive {shares ? fmt(shares - fee, 18) : "0"} BLUE; {fmt(fee, 18)} BLUE ({(fund.mintFeeBps / 100).toFixed(2)}%) goes to
+        You receive {shares ? fmt(shares - fee, 18) : "0"} {symbol}; {fmt(fee, 18)} {symbol} ({(fund.mintFeeBps / 100).toFixed(2)}%) goes to
         buying and burning $CHIP.
       </p>
 
@@ -152,7 +153,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
                 ["usdc", "USDC"],
                 ["eth", "ETH"],
                 ...(d.weth ? ([["weth", "WETH"]] as const) : []),
-                ["stocks", "The 7 stocks"],
+                ["stocks", `The ${fund.constituents.length} stocks`],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -171,7 +172,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
       )}
 
       {pay !== "stocks" ? (
-        <ZapMint pay={pay} shares={shares} settledShares={settledShares} received={shares ? shares - fee : 0n} value={value} overCap={overCap} wallet={wallet} onDone={onDone} />
+        <ZapMint deployment={d} symbol={symbol} pay={pay} shares={shares} settledShares={settledShares} received={shares ? shares - fee : 0n} value={value} overCap={overCap} wallet={wallet} onDone={onDone} />
       ) : (
         <>
           <h3 className="mt-6 text-sm font-semibold">You deposit</h3>

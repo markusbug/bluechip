@@ -53,8 +53,8 @@ contract DeployMocks is DeploymentIO {
         address predictedBurner = vm.computeCreateAddress(deployer, nonce + 1);
         address predictedRebalancer = vm.computeCreateAddress(deployer, nonce + 2);
         fund = new BlueFund(
-            "Bluechip Index",
-            "BLUE",
+            b.tokenName,
+            b.tokenSymbol,
             m.tokens,
             b.units,
             deployer,
@@ -92,6 +92,7 @@ contract DeployMocks is DeploymentIO {
         vm.stopBroadcast();
 
         _writeDeployment(
+            b,
             address(fund),
             address(burner),
             address(m.chip),

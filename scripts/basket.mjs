@@ -1,21 +1,22 @@
 #!/usr/bin/env node
-// Turns contracts/basket/mag7.config.json into the seed vector the fund is deployed with.
+// Turns a fund's contracts/basket/<basket>.config.json into the seed vector it is deployed with.
 //
 // Float-adjusted cap weighting, the S&P 500 method: hold a number of shares of each company
-// proportional to its float shares (see scripts/lib/index-data.mjs), scaled so one BLUE is worth
+// proportional to its float shares (see scripts/lib/index-data.mjs), scaled so one fund share is worth
 // `targetUsdPerShare` today. Prices come from the Coinbase Chainlink feeds on Base, which are
 // total-return (already include the token multiplier), so
 //   units_i = target * floatShares_i / (multiplier_i * totalFloatCap) * 10^decimals
 // The same float shares are the rebalancer's initial index, so the fund starts on target.
 // Also snapshots names and icons from the Coinbase API (it has no CORS, so the site can't).
 //
-// Usage: node scripts/basket.mjs [--rpc https://mainnet.base.org]
-import { mkdirSync, writeFileSync } from "node:fs";
+// Usage: node scripts/basket.mjs [--fund blueai] [--rpc https://mainnet.base.org]
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { getAddress } from "viem";
+import { basketOf, fundId } from "./lib/fund.mjs";
 import { floatShares, loadConfig } from "./lib/index-data.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
-const outPath = `${root}contracts/basket/mag7.json`;
+const outPath = `${root}contracts/basket/${basketOf(fundId())}.json`;
 const metaPath = `${root}web/src/data/stocks.json`;
 const rpcArg = process.argv.indexOf("--rpc");
 const RPC = rpcArg > 0 ? process.argv[rpcArg + 1] : process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
@@ -96,6 +97,9 @@ const tokens = rows.map((r) => {
 
 const out = {
   name: cfg.name,
+  // The fund token's ERC-20 name and symbol (Deploy.s.sol reads them).
+  tokenName: cfg.tokenName,
+  tokenSymbol: cfg.tokenSymbol,
   targetUsdPerShare: cfg.targetUsdPerShare,
   generatedAt: new Date().toISOString(),
   totalFloatCapUsd: Math.round(totalCap),
@@ -117,8 +121,9 @@ const out = {
 writeFileSync(outPath, JSON.stringify(out, null, 2) + "\n");
 
 // Display metadata for the site, keyed by symbol (mock tokens on testnets reuse the symbols).
+// Shared by every fund, so this adds and refreshes this basket's stocks and keeps the others.
 const api = await fetch("https://api.coinbase.com/v1/tokenized-stocks").then((r) => r.json());
-const meta = {};
+const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, "utf8")) : {};
 // Icons are served by the site itself, so visitors never hit a third-party CDN.
 const iconDir = `${root}web/public/icons`;
 mkdirSync(iconDir, { recursive: true });
@@ -146,9 +151,9 @@ for (const t of tokens) {
 }
 writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 
-console.log(`${cfg.name}: 1 BLUE ≈ $${cfg.targetUsdPerShare}, float cap $${(totalCap / 1e12).toFixed(2)}T`);
+console.log(`${cfg.name}: 1 ${cfg.tokenSymbol} ≈ $${cfg.targetUsdPerShare}, float cap $${(totalCap / 1e12).toFixed(2)}T`);
 for (const t of tokens) {
   const per = Number(t.units) / 10 ** t.decimals;
-  console.log(`  ${t.symbol.padEnd(7)} ${(t.weight * 100).toFixed(2).padStart(6)}%  ${per.toFixed(8)} per BLUE  ($${(per * t.price).toFixed(2)})`);
+  console.log(`  ${t.symbol.padEnd(7)} ${(t.weight * 100).toFixed(2).padStart(6)}%  ${per.toFixed(8)} per ${cfg.tokenSymbol}  ($${(per * t.price).toFixed(2)})`);
 }
 console.log(`wrote ${outPath}\nwrote ${metaPath}`);

@@ -8,9 +8,12 @@ import {MintZap} from "../src/MintZap.sol";
 import {ICLPool} from "../src/interfaces/ICLPool.sol";
 import {IWETH} from "../src/interfaces/IWETH.sol";
 
-/// @notice Reads the basket and writes deployments/<chainId>.json, which the site imports.
+/// @notice Reads a fund's basket and writes its deployment file, which the site imports.
+///         FUND (default "blue") picks the fund, by the same rule as scripts/lib/fund.mjs:
+///         blue    basket/mag7.json    deployments/<chainId>.json
+///         <id>    basket/<id>.json    deployments/<chainId>-<id>.json
 abstract contract DeploymentIO is Script {
-    string internal constant BASKET = "basket/mag7.json";
+    string internal constant DEFAULT_FUND = "blue";
 
     // Base mainnet. WETH and the Uniswap v4 PoolManager are fixed; the pool is Aerodrome
     // Slipstream's deepest USDC/WETH pool.
@@ -19,6 +22,8 @@ abstract contract DeploymentIO is Script {
     address internal constant POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
 
     struct Basket {
+        string tokenName;
+        string tokenSymbol;
         string[] symbols;
         address[] addresses;
         address[] feeds;
@@ -31,8 +36,25 @@ abstract contract DeploymentIO is Script {
         address usdc;
     }
 
+    function _fund() internal view returns (string memory) {
+        return vm.envOr("FUND", DEFAULT_FUND);
+    }
+
+    function _isDefaultFund() internal view returns (bool) {
+        return keccak256(bytes(_fund())) == keccak256(bytes(DEFAULT_FUND));
+    }
+
+    function _basketPath() internal view returns (string memory) {
+        return string.concat("basket/", _isDefaultFund() ? "mag7" : _fund(), ".json");
+    }
+
     function _readBasket() internal view returns (Basket memory b) {
-        string memory json = vm.readFile(BASKET);
+        string memory json = vm.readFile(_basketPath());
+        // BLUE's basket was generated before the token name was part of it.
+        b.tokenName =
+            vm.keyExistsJson(json, ".tokenName") ? vm.parseJsonString(json, ".tokenName") : "Bluechip Index";
+        b.tokenSymbol =
+            vm.keyExistsJson(json, ".tokenSymbol") ? vm.parseJsonString(json, ".tokenSymbol") : "BLUE";
         b.symbols = vm.parseJsonStringArray(json, ".symbols");
         b.addresses = vm.parseJsonAddressArray(json, ".addresses");
         b.feeds = vm.parseJsonAddressArray(json, ".feeds");
@@ -70,10 +92,11 @@ abstract contract DeploymentIO is Script {
     }
 
     function _deploymentPath() internal view returns (string memory) {
-        return string.concat("deployments/", vm.toString(block.chainid), ".json");
+        string memory suffix = _isDefaultFund() ? "" : string.concat("-", _fund());
+        return string.concat("deployments/", vm.toString(block.chainid), suffix, ".json");
     }
 
-    /// @dev Add or replace one address in deployments/<chainId>.json, keeping everything else.
+    /// @dev Add or replace one address in the deployment file, keeping everything else.
     ///      (`vm.writeJson(value, path, key)` only replaces keys that already exist.)
     function _setDeploymentAddress(string memory key, address value) internal {
         string memory k = "existing";
@@ -82,6 +105,7 @@ abstract contract DeploymentIO is Script {
     }
 
     function _writeDeployment(
+        Basket memory b,
         address fund,
         address burner,
         address chip,
@@ -94,6 +118,9 @@ abstract contract DeploymentIO is Script {
     ) internal {
         string memory k = "deployment";
         bool mock = faucet != address(0);
+        vm.serializeString(k, "id", _fund());
+        vm.serializeString(k, "name", b.tokenName);
+        vm.serializeString(k, "symbol", b.tokenSymbol);
         vm.serializeUint(k, "chainId", block.chainid);
         vm.serializeUint(k, "startBlock", block.number);
         vm.serializeBool(k, "mock", mock);

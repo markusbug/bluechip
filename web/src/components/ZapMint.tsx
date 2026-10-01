@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useSimulateContract } from "wagmi";
+import { useReadContract } from "wagmi";
 import type { Abi, Address } from "viem";
-import { erc20Abi } from "viem";
+import { erc20Abi, parseAbi } from "viem";
 import { blueFundAbi, mintZapAbi, mockStockAbi } from "../abi";
-import { deployment, siteConfig } from "../config";
+import { siteConfig, type Deployment } from "../config";
 import type { WalletState } from "../hooks/useWallet";
 import { explainError } from "../lib/errors";
 import { fmt, pct, usd } from "../lib/format";
@@ -21,6 +21,10 @@ const PREMIUM_WARNING = 0.02;
 /** The zap's own errors plus the fund's, so a refusal from either one gets a readable message. */
 const zapAbi = [...mintZapAbi, ...blueFundAbi.filter((x) => x.type === "error")] as Abi;
 
+/** `quoteMint` isn't a view (it runs the swaps and reverts them to read the price), so wagmi would only
+ *  simulate it with a wallet connected. Read as a view, it's a plain eth_call that works for anyone. */
+const quoteAbi = parseAbi(["function quoteMint(uint256 shares) view returns (uint256 usdcIn, uint256 ethIn)"]);
+
 /**
  * Mint with USDC, ETH or WETH: the zap buys exactly the stocks the mint deposits on Aerodrome and
  * mints, in one transaction. The price is `quoteMint` (simulated with eth_call), plus a slippage
@@ -28,6 +32,8 @@ const zapAbi = [...mintZapAbi, ...blueFundAbi.filter((x) => x.type === "error")]
  * WETH has no permit, so a plain wallet approves and then mints (two transactions).
  */
 export function ZapMint({
+  deployment: d,
+  symbol,
   pay,
   shares,
   settledShares,
@@ -37,11 +43,14 @@ export function ZapMint({
   wallet,
   onDone,
 }: {
+  deployment: Deployment;
+  /** The fund's token symbol. */
+  symbol: string;
   pay: PayToken;
   shares: bigint | undefined;
   /** `shares` once typing has paused: what gets quoted. */
   settledShares: bigint | undefined;
-  /** BLUE credited to the minter, after the fee. */
+  /** Fund shares credited to the minter, after the fee. */
   received: bigint;
   /** NAV of the mint in USD at the feed prices. */
   value: number | undefined;
@@ -55,20 +64,19 @@ export function ZapMint({
   const [error, setError] = useState<string>();
   const [hash, setHash] = useState<string>();
 
-  const d = deployment!;
   const zap = d.zap!;
   const usdc = d.usdc!;
   const weth = d.weth;
-  const quote = useSimulateContract({
+  const quote = useReadContract({
     address: zap,
-    abi: mintZapAbi,
+    abi: quoteAbi,
     functionName: "quoteMint",
     args: [settledShares ?? 0n],
     query: { enabled: !!settledShares && settledShares > 0n && !overCap, refetchInterval: 15_000 },
   });
   // A quote for an amount the user has since changed is no quote.
   const current = settledShares === shares && !quote.isPlaceholderData;
-  const [usdcIn, ethIn] = (current ? quote.data?.result : undefined) ?? [undefined, undefined];
+  const [usdcIn, ethIn] = (current ? quote.data : undefined) ?? [undefined, undefined];
   const cost = pay === "usdc" ? usdcIn : ethIn;
   const decimals = pay === "usdc" ? 6 : 18;
   const unit = { usdc: "USDC", eth: "ETH", weth: "WETH" }[pay];
@@ -119,7 +127,7 @@ export function ZapMint({
         }
       }
       setHash(await runCalls(account, calls, progress));
-      setMessage(`Minted ${fmt(received, 18)} BLUE.${pay === "eth" ? " Unspent ETH went back to your wallet." : ""}`);
+      setMessage(`Minted ${fmt(received, 18)} ${symbol}.${pay === "eth" ? " Unspent ETH went back to your wallet." : ""}`);
       onDone();
     } catch (e) {
       setMessage(undefined);
@@ -226,7 +234,7 @@ export function ZapMint({
                     : `Buy the stocks and mint with ${unit}`}
       </Button>
       <p className="mt-2 text-xs text-muted">
-        One transaction buys exactly the stocks this mint deposits in their Aerodrome pools and mints your BLUE. You never pay more
+        One transaction buys exactly the stocks this mint deposits in their Aerodrome pools and mints your {symbol}. You never pay more
         than the maximum{pay === "eth" ? "; whatever it doesn't spend comes straight back" : ""}.
       </p>
       <TxStatus busy={busy} message={message} error={error} hash={hash} explorerTx={siteConfig.explorerTx} />

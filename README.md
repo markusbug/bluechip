@@ -1,13 +1,14 @@
 # Bluechip 🔵
 
-**An onchain index fund of tokenized US stocks, on Base.**
+**Onchain index funds of tokenized US stocks, on Base.**
 
-Base is blue. The stocks are blue chips. Two tokens:
+Base is blue. The stocks are blue chips. The tokens:
 
 | Token | Ticker | What it is |
 |---|---|---|
 | Bluechip Index | `$BLUE` | The fund share. An ERC-20 backed in kind by the seven largest US tech stocks (NVDA, AAPL, GOOGL, MSFT, AMZN, META, TSLA), weighted by float-adjusted market cap like the S&P 500 and kept on that index automatically. Mint by depositing the basket, redeem to get it back. |
-| Chip | `$CHIP` | The project token, launched on [Bankr](https://bankr.bot). Every mint pays 0.30% in `$BLUE` to the CHIP burner, which uses it to buy CHIP and burn it. |
+| Bluechip AI | `$BLUEAI` | A second fund on the same contracts: the AI build-out (NVDA, MSFT, GOOGL, AMZN, META, SNDK), weighted and kept on its index the same way. Ready to deploy; see [Launch](#launch). |
+| Chip | `$CHIP` | The project token, launched on [Bankr](https://bankr.bot). Every mint of either fund pays 0.30% in fund shares to that fund's CHIP burner, which uses it to buy CHIP and burn it. |
 
 Put the two together and you get **BLUE + CHIP**.
 
@@ -67,9 +68,11 @@ contracts/                Foundry
   script/DeployZap.s.sol  adds (or replaces) the USDC/ETH/WETH mint zap
   test/fork/              the CHIP route against a live Bankr pool (BASE_FORK_URL=... to run)
   script/DeployMocks.s.sol  local / Base Sepolia with mocks, seeded
-  basket/mag7.config.json   tickers, addresses, feeds, pools, CIKs, IWFs  (edit this)
-  basket/mag7.json          generated seed vector                          (npm run basket)
-  deployments/<chainId>.json  written by the deploy scripts, imported by the site
+  basket/mag7.config.json   BLUE: tickers, addresses, feeds, pools, CIKs, IWFs  (edit this)
+  basket/mag7.json          BLUE: generated seed vector                          (npm run basket)
+  basket/blueai.config.json, blueai.json   the same for BLUEAI                 (npm run basket -- --fund blueai)
+  deployments/<chainId>.json  BLUE's contracts, written by the deploy scripts, imported by the site
+  deployments/<chainId>-<fund>.json  every other fund's
 scripts/basket.mjs        EDGAR shares + live Chainlink prices -> seed units and initial index
 scripts/index-update.mjs  EDGAR -> proposes a new index when float shares move
 scripts/keeper.mjs        activates due index updates and makes rebalancing trades
@@ -90,6 +93,7 @@ npm test                       # forge test: unit + fuzz + invariants
 
 npm run chain                  # anvil on :8545 (separate terminal)
 npm run deploy:local           # mock stocks, feeds, DEX + mock CHIP + fund + burner + rebalancer, seeded
+FUND=blueai npm run deploy:local   # optional: BLUEAI too, so the site shows the fund picker
 cp web/.env.example web/.env   # set VITE_CHAIN=anvil
 npm run web                    # http://localhost:5173
 ```
@@ -108,6 +112,8 @@ See [`docs/LAUNCH.md`](docs/LAUNCH.md). In short:
 4. Seed with `scripts/seed.sh`.
 5. Redeploy the site.
 6. Turn on the automation (keys in GitHub secrets, then add `8453` to `KEEPER_CHAINS` and `INDEX_CHAINS`).
+
+**More than one fund.** Every fund is its own set of the same contracts. `FUND=<id>` for the forge scripts and `seed.sh`, or `--fund <id>` for the Node scripts, picks the fund; the default is `blue`, whose files keep their original names (`basket/mag7*.json`, `deployments/<chainId>.json`). Any other fund uses `basket/<id>*.json` and `deployments/<chainId>-<id>.json` (the one rule lives in `scripts/lib/fund.mjs` and `contracts/script/DeploymentIO.sol`). The site lists every fund deployed on its chain and lets visitors pick one (`web/src/funds.ts` holds their display copy). BLUEAI's launch steps are in [`docs/LAUNCH.md`](docs/LAUNCH.md#8-launch-another-fund-bluechip-ai-blueai).
 
 ## Why some things are the way they are
 

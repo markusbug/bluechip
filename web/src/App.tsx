@@ -1,16 +1,22 @@
 import { ChipSection } from "./components/ChipSection";
 import { Footer } from "./components/Footer";
+import { FundPicker } from "./components/FundPicker";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
 import { Holdings } from "./components/Holdings";
 import { HowItWorks } from "./components/HowItWorks";
 import { Trade } from "./components/Trade";
+import { funds } from "./config";
 import { useFund } from "./hooks/useFund";
+import { useSelectedFund } from "./hooks/useSelectedFund";
 import { useWallet } from "./hooks/useWallet";
 
 export default function App() {
-  const fund = useFund();
-  const wallet = useWallet();
+  // `funds` is fixed for the build, so this calls the same hooks in the same order on every render.
+  const states = funds.map((f) => useFund(f));
+  const [selected, select] = useSelectedFund();
+  const fund = states[funds.indexOf(selected)];
+  const wallet = useWallet(selected);
   const refresh = () => {
     fund.refetch();
     wallet.refetch();
@@ -18,14 +24,16 @@ export default function App() {
 
   return (
     <>
-      <Header />
+      <Header multiFund={funds.length > 1} />
       <main>
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <Hero fund={fund} />
+          <Hero fund={fund} multiFund={funds.length > 1} />
+          {funds.length > 1 && <FundPicker funds={states} selected={selected.id} onSelect={select} />}
           <Holdings fund={fund} />
-          <Trade fund={fund} wallet={wallet} onDone={refresh} />
+          {/* Keyed by fund, so switching funds starts every form afresh. */}
+          <Trade key={selected.id} fund={fund} wallet={wallet} onDone={refresh} />
         </div>
-        <ChipSection fund={fund} wallet={wallet} onDone={refresh} />
+        <ChipSection funds={states} wallet={wallet} onDone={refresh} />
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <HowItWorks />
           <Footer />
