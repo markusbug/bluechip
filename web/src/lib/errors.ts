@@ -25,3 +25,11 @@ export function explainError(e: unknown): string {
   }
   return e instanceof Error ? e.message : String(e);
 }
+
+/** A short, address-free label for analytics: "rejected", the contract error's name, or "other". */
+export function errorKind(e: unknown): string {
+  if (!(e instanceof BaseError)) return "other";
+  if (e.walk((x) => x instanceof UserRejectedRequestError)) return "rejected";
+  const revert = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
+  return revert?.data?.errorName ?? "other";
+}

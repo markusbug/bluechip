@@ -6,7 +6,8 @@ import { blueFundAbi } from "../abi";
 import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
-import { explainError } from "../lib/errors";
+import { track } from "../lib/analytics";
+import { errorKind, explainError } from "../lib/errors";
 import { fmt, parseAmount, usd } from "../lib/format";
 import { runCalls } from "../lib/tx";
 import { progressText } from "./MintPanel";
@@ -39,6 +40,7 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
     setBusy(true);
     setError(undefined);
     setHash(undefined);
+    track("redeem_start", { fund: symbol });
     try {
       const call =
         skip.length === 0
@@ -47,11 +49,13 @@ export function RedeemPanel({ fund, wallet, onDone }: { fund: FundState; wallet:
       const tx = await runCalls(account, [call], (p) => setMessage(progressText(p.label, p.step, p.total, p.stage)));
       setHash(tx);
       setMessage(`Redeemed ${fmt(shares!, 18)} ${symbol} for the stocks.`);
+      track("redeem", { fund: symbol, value: value === undefined ? undefined : Math.round(value), currency: "USD" });
       setAmount("");
       onDone();
     } catch (e) {
       setMessage(undefined);
       setError(explainError(e));
+      track("redeem_failed", { fund: symbol, reason: errorKind(e) });
     } finally {
       setBusy(false);
     }

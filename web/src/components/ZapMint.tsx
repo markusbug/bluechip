@@ -5,7 +5,8 @@ import { erc20Abi, parseAbi } from "viem";
 import { blueFundAbi, mintZapAbi, mockStockAbi } from "../abi";
 import { siteConfig, type Deployment } from "../config";
 import type { WalletState } from "../hooks/useWallet";
-import { explainError } from "../lib/errors";
+import { track } from "../lib/analytics";
+import { errorKind, explainError } from "../lib/errors";
 import { fmt, pct, usd } from "../lib/format";
 import { permitDeadline, permitDomain, signPermit } from "../lib/permit";
 import { canBatch, runCalls, type Call } from "../lib/tx";
@@ -97,6 +98,7 @@ export function ZapMint({
     setBusy(true);
     setError(undefined);
     setHash(undefined);
+    track("mint_start", { fund: symbol, pay_with: pay });
     try {
       const progress = (p: { label: string; step: number; total: number; stage: "sign" | "wallet" | "pending" }) =>
         setMessage(progressText(p.label, p.step, p.total, p.stage));
@@ -128,10 +130,12 @@ export function ZapMint({
       }
       setHash(await runCalls(account, calls, progress));
       setMessage(`Minted ${fmt(received, 18)} ${symbol}.${pay === "eth" ? " Unspent ETH went back to your wallet." : ""}`);
+      track("mint", { fund: symbol, pay_with: pay, value: value === undefined ? undefined : Math.round(value), currency: "USD" });
       onDone();
     } catch (e) {
       setMessage(undefined);
       setError(explainError(e));
+      track("mint_failed", { fund: symbol, pay_with: pay, reason: errorKind(e) });
     } finally {
       setBusy(false);
     }

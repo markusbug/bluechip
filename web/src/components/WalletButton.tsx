@@ -1,6 +1,7 @@
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { useAccount, useAccountEffect, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { useState } from "react";
 import { siteConfig } from "../config";
+import { track } from "../lib/analytics";
 import { shortAddress } from "../lib/format";
 import { Button } from "./ui";
 
@@ -16,6 +17,11 @@ export function WalletButton() {
   const { disconnect } = useDisconnect();
   const { switchChain, isPending: switching } = useSwitchChain();
   const [open, setOpen] = useState(false);
+  useAccountEffect({
+    onConnect: ({ connector, isReconnected }) => {
+      if (!isReconnected) track("wallet_connect", { wallet: connectorLabel(connector.name) });
+    },
+  });
 
   if (!isConnected || !address) {
     return (

@@ -8,7 +8,7 @@ const ANVIL_ACCOUNT = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 const connectors = [
   injected(),
-  // No telemetry: the site itself has no analytics and shouldn't ship any through a wallet SDK.
+  // No telemetry: the site's only analytics is its own Google Analytics tag (lib/analytics.ts), not a wallet SDK's.
   baseAccount({ appName: siteConfig.name, preference: { telemetry: false } }),
   ...(siteConfig.chain.id === foundry.id ? [mock({ accounts: [ANVIL_ACCOUNT], features: { reconnect: true } })] : []),
 ];

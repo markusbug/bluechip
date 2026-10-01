@@ -6,7 +6,8 @@ import { blueFundAbi, mockFaucetAbi } from "../abi";
 import { siteConfig } from "../config";
 import type { FundState } from "../hooks/useFund";
 import type { WalletState } from "../hooks/useWallet";
-import { explainError } from "../lib/errors";
+import { track } from "../lib/analytics";
+import { errorKind, explainError } from "../lib/errors";
 import { fmt, parseAmount, usd } from "../lib/format";
 import { NO_PERMIT, permitDeadline, permitDomain, signPermit, type SignedPermit } from "../lib/permit";
 import { canBatch, runCalls, type Call } from "../lib/tx";
@@ -64,6 +65,7 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
     setBusy(true);
     setError(undefined);
     setHash(undefined);
+    track("mint_start", { fund: symbol, pay_with: "stocks" });
     try {
       const mintCall: Call = { address: d.fund, abi: blueFundAbi, functionName: "mint", args: [shares!, account], label: "Mint" };
       let tx: string;
@@ -102,10 +104,12 @@ export function MintPanel({ fund, wallet, onDone }: { fund: FundState; wallet: W
       }
       setHash(tx);
       setMessage(`Minted ${fmt(shares! - fee, 18)} ${symbol}.`);
+      track("mint", { fund: symbol, pay_with: "stocks", value: value === undefined ? undefined : Math.round(value), currency: "USD" });
       onDone();
     } catch (e) {
       setMessage(undefined);
       setError(explainError(e));
+      track("mint_failed", { fund: symbol, pay_with: "stocks", reason: errorKind(e) });
     } finally {
       setBusy(false);
     }

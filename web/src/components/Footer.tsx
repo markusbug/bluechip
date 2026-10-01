@@ -1,6 +1,6 @@
 import { funds, siteConfig } from "../config";
 
-export function Footer() {
+export function Footer({ onCookieSettings }: { onCookieSettings?: () => void }) {
   const links = funds.flatMap(({ symbol, deployment }) =>
     deployment
       ? [
@@ -45,6 +45,13 @@ export function Footer() {
               CHIP launched on Bankr
             </a>
           </li>
+          {onCookieSettings && (
+            <li>
+              <button type="button" className="hover:text-ink" onClick={onCookieSettings}>
+                Cookie settings
+              </button>
+            </li>
+          )}
         </ul>
       </div>
     </footer>
