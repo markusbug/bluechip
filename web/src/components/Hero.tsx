@@ -52,7 +52,7 @@ export function Hero({ fund, multiFund }: { fund: FundState; multiFund: boolean 
           <Stat label="Fund size" value={fund.deployed ? compactUsd(fund.aum) : "Not live yet"} />
           <Stat
             label={`${symbol} in circulation`}
-            value={fund.deployed ? supply.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "–"}
+            value={fund.deployed ? supply.toLocaleString("en-US", { maximumFractionDigits: supply < 1 ? 4 : 2 }) : "–"}
             sub={fund.deployed && cap ? `Cap ${cap.toLocaleString("en-US")}` : undefined}
           />
         </div>
