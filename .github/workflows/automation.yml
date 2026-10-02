@@ -1,12 +1,15 @@
 # Keeps the fund on its index without anyone at the keyboard:
 #   keeper        every 10 minutes during the US session: activates a due index update and makes at
 #                 most one rebalancing trade. On a testnet mock deployment it also refreshes the
-#                 mock price feeds.
+#                 mock price feeds. GitHub drops and delays frequent schedules, so one run stays up
+#                 through the session (14:30-20:00 UTC) and ticks itself; the hourly triggers after
+#                 the first are spares that exit at once while a keeper is already running. A
+#                 manual run ticks once.
 #   index-update  Mondays: recomputes float shares from SEC filings and proposes them if they moved.
 #
 # Each job runs for the chains listed in a repository variable (space-separated), and does nothing
 # while it is empty:
-#   KEEPER_CHAINS  e.g. "84532" (Base Sepolia), later "84532 8453" (plus Base mainnet)
+#   KEEPER_CHAINS  e.g. "8453" (Base mainnet); "84532" (Base Sepolia) needs BASE_SEPOLIA_RPC_URL
 #   INDEX_CHAINS   e.g. "8453"
 # and for each fund in FUNDS (default "blue"; with BLUEAI live, "blue blueai"). A (chain, fund) pair
 # without a committed deployment file (contracts/deployments/<chainId>.json for blue,
@@ -19,7 +22,7 @@ name: automation
 
 on:
   schedule:
-    - cron: "*/10 14-19 * * 1-5"
+    - cron: "25 14-19 * * 1-5"
     - cron: "0 15 * * 1"
   workflow_dispatch:
     inputs:
@@ -28,15 +31,14 @@ on:
         required: true
         default: keeper
 
-concurrency:
-  group: automation-${{ github.event.schedule || inputs.job }}
-  cancel-in-progress: false
-
 jobs:
   keeper:
-    if: vars.KEEPER_CHAINS != '' && (github.event.schedule == '*/10 14-19 * * 1-5' || inputs.job == 'keeper')
+    if: vars.KEEPER_CHAINS != '' && (github.event.schedule == '25 14-19 * * 1-5' || inputs.job == 'keeper')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,18 +53,41 @@ jobs:
           KEEPER_KEY: ${{ secrets.KEEPER_KEY }}
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           [ -n "$KEEPER_KEY" ] || { echo "::error::KEEPER_KEY is not set"; exit 1; }
+          # An earlier run still in its keeper job owns the wallet (and its nonces) until the close.
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/automation.yml/runs?status=in_progress" \
+              --jq ".workflow_runs[] | select(.id < $GITHUB_RUN_ID) | .id"); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+                --jq '.jobs[] | select(.name == "keeper" and .status == "in_progress") | .id' | grep -q .; then
+              echo "keeper already running in run $id"
+              exit 0
+            fi
+          done
+          close=$(date -u -d 20:00 +%s)
+          declare -A fails
           status=0
-          for chain in $CHAINS; do
-            case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
-            for fund in $FUNDS; do
-              if [ "$fund" = blue ]; then file=$chain.json; else file=$chain-$fund.json; fi
-              [ -f "contracts/deployments/$file" ] || continue
-              echo "::group::chain $chain, fund $fund"
-              RPC_URL=$rpc node scripts/keeper.mjs --chain "$chain" --fund "$fund" || status=1
-              echo "::endgroup::"
+          while :; do
+            for chain in $CHAINS; do
+              case $chain in 8453) rpc=$BASE_RPC_URL ;; 84532) rpc=$BASE_SEPOLIA_RPC_URL ;; *) rpc= ;; esac
+              for fund in $FUNDS; do
+                if [ "$fund" = blue ]; then file=$chain.json; else file=$chain-$fund.json; fi
+                [ -f "contracts/deployments/$file" ] || continue
+                echo "::group::chain $chain, fund $fund"
+                if RPC_URL=$rpc node scripts/keeper.mjs --chain "$chain" --fund "$fund"; then
+                  fails[$chain-$fund]=0
+                else
+                  # One flaky RPC call is retried next tick; three in a row is a real problem.
+                  fails[$chain-$fund]=$(( ${fails[$chain-$fund]:-0} + 1 ))
+                  echo "::warning::chain $chain, fund $fund failed ${fails[$chain-$fund]} tick(s) in a row"
+                  [ "${fails[$chain-$fund]}" -lt 3 ] || status=1
+                fi
+                echo "::endgroup::"
+              done
             done
+            [ "$GITHUB_EVENT_NAME" = schedule ] && [ $(( $(date +%s) + 600 )) -lt "$close" ] || break
+            sleep 600
           done
           exit $status
 
@@ -70,6 +95,7 @@ jobs:
     if: vars.INDEX_CHAINS != '' && (github.event.schedule == '0 15 * * 1' || inputs.job == 'index-update')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency: index-update
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
