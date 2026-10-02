@@ -1,0 +1,28 @@
+{
+  "burner": "0x304eaFD114cd362196D99E818FdBFc7C0CfB6eC9",
+  "chainId": 8453,
+  "chip": "0x491C748d44B29B4A81145591DE5a4F52617aBba3",
+  "feeds": [
+    "0x6A634B235903C4ad6376892180d6fF8612e3Fa68",
+    "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4"
+  ],
+  "fund": "0xE22A613B6C8C8b7B21FcF657f5aFa648afAf06C7",
+  "id": "bluex",
+  "mock": false,
+  "name": "Bluechip X",
+  "rebalancer": "0x0962F7D383A87172Ec48Feab409beC2D3f8D8E52",
+  "startBlock": 52076048,
+  "swapper": "0xA29c86a2cC601Ae099a6Ad8D258476D26Ab058b4",
+  "symbol": "BLUEX",
+  "symbols": [
+    "SPCXc",
+    "TSLAc"
+  ],
+  "tokens": [
+    "0xb2000000000000000000007b9fcbd005511aCBd5",
+    "0xb2000000000000000000001e800a7f5189430cD0"
+  ],
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "weth": "0x4200000000000000000000000000000000000006",
+  "zap": "0x4F901AaE913A38BD715c01DdE8d5d36FB5A48045"
+}

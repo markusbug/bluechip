@@ -62,5 +62,13 @@
     "isin": "US80004C2008",
     "feed": "0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA",
     "mainnetAddress": "0xb200000000000000000000397293Cb8cda9a10c5"
+  },
+  "SPCXc": {
+    "ticker": "SPCX",
+    "name": "Space Exploration Technologies Corp.",
+    "icon": "/icons/SPCX.png",
+    "isin": "US84615Q1031",
+    "feed": "0x6A634B235903C4ad6376892180d6fF8612e3Fa68",
+    "mainnetAddress": "0xb2000000000000000000007b9fcbd005511aCBd5"
   }
 }

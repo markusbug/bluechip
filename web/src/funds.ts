@@ -32,4 +32,12 @@ export const FUND_INFO: FundInfo[] = [
     tagline: "The AI build-out: chips, cloud, models and memory.",
     headline: "The AI build-out in one token.",
   },
+  {
+    id: "bluex",
+    basketName: "bluex",
+    name: "Bluechip X",
+    symbol: "BLUEX",
+    tagline: "SpaceX and Tesla: rockets, satellites, cars and robots.",
+    headline: "SpaceX and Tesla in one token.",
+  },
 ];

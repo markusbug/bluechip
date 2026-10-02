@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys and seeds another fund (default: BLUEAI) on Base mainnet, signed by a Foundry keystore.
+# Deploys and seeds another fund (FUND=<id>, e.g. bluex) on Base mainnet, signed by a Foundry keystore.
 # Rerun it after any stop: it picks up where it left off.
 #
 #   1. basket   regenerates contracts/basket/<fund>.json at live prices (skipped once deployed)
@@ -11,11 +11,11 @@
 #
 # Every step that sends transactions shows what it will do and waits for you to type "yes".
 #
-#   scripts/deploy-fund.sh                         # BLUEAI, keystore account mhaas, 1 share seed
-#   SHARES=2 scripts/deploy-fund.sh                # seed with 2 shares (about $100 each)
-#   ACCOUNT=other FUND=blueai scripts/deploy-fund.sh
-#   OWNER=0x... scripts/deploy-fund.sh             # owner other than the signer (then that wallet seeds)
-#   SKIP_BASKET=1 scripts/deploy-fund.sh           # deploy the basket file as it is
+#   FUND=bluex scripts/deploy-fund.sh                # BLUEX, keystore account mhaas, 1 share seed
+#   FUND=bluex SHARES=2 scripts/deploy-fund.sh       # seed with 2 shares (about $100 each)
+#   FUND=bluex ACCOUNT=other scripts/deploy-fund.sh
+#   FUND=bluex OWNER=0x... scripts/deploy-fund.sh    # owner other than the signer (then that wallet seeds)
+#   FUND=bluex SKIP_BASKET=1 scripts/deploy-fund.sh  # deploy the basket file as it is
 #
 # Env: BASE_RPC_URL (or contracts/.env; default the public RPC), ETHERSCAN_API_KEY (verifies the
 # contracts if set), SEC_USER_AGENT (for the basket step), SUPPLY_CAP / MINT_FEE_BPS (Deploy.s.sol
@@ -23,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-FUND=${FUND:-blueai}
+FUND=${FUND:?set FUND to the fund id, e.g. FUND=bluex}
 ACCOUNT=${ACCOUNT:-mhaas}
 SHARES=${SHARES:-1}
 CHAIN_ID=8453
@@ -50,6 +50,7 @@ lower() { tr '[:upper:]' '[:lower:]'; }
 
 [[ $(cast chain-id --rpc-url "$RPC") == "$CHAIN_ID" ]] || die "$RPC is not Base mainnet"
 [[ -f $BLUE ]] || die "no $BLUE: BLUE's deployment supplies the CHIP pool, keeper and updater"
+[[ -f contracts/basket/$FUND.config.json ]] || die "no contracts/basket/$FUND.config.json"
 
 # The keystore password is asked once and handed only to the commands that sign, as a file.
 read -rsp "Password for keystore '$ACCOUNT': " password
@@ -182,12 +183,17 @@ else
   failed=1
 fi
 
+# Every fund with a mainnet deployment file, for the automation's FUNDS variable.
+FUNDS=$(for f in contracts/deployments/$CHAIN_ID.json contracts/deployments/$CHAIN_ID-*.json; do
+  [[ $f == */$CHAIN_ID.json ]] && echo blue || basename "$f" .json | sed "s/^$CHAIN_ID-//"
+done | paste -sd' ')
+
 cat <<EOF
 
 $SYMBOL is live: $FUND_ADDR
 Next:
   git add $DEPLOYMENT $BASKET && git commit    # the site and the automation read these
   npm run deploy:site                          # the fund picker appears with $SYMBOL
-  gh variable set FUNDS --body "blue $FUND"    # keeper and index updates for $SYMBOL too
+  gh variable set FUNDS --body "$FUNDS"    # keeper and index updates for $SYMBOL too
 EOF
 exit $failed

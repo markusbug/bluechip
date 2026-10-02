@@ -225,6 +225,20 @@ BLUEAI holds NVDA, MSFT, GOOGL, AMZN, META and SNDK, weighted the same way as BL
 5. **Site.** `npm run deploy:site`. The site lists a fund once its deployment file exists, so BLUEAI appears next to BLUE with a fund picker; `?fund=blueai` links straight to it.
 6. **Automation.** Set the repository variable `FUNDS` to `blue blueai`. Both jobs then loop over every fund on every listed chain, skipping a fund with no deployment file there. Dry-run first: `npm run keeper -- --fund blueai --dry-run` and `npm run index:update -- --fund blueai --dry-run`.
 
+## 9. Launch Bluechip X ($BLUEX)
+
+BLUEX holds SpaceX and Tesla (SPCXc, TSLAc), weighted the same way. Its config is `contracts/basket/bluex.config.json`.
+
+SpaceX lists only Class A, and its 10-Q tags the cover-page share count per class, which EDGAR's companyfacts API leaves out. So SPCXc has `"coverClasses": ["CommonClassA"]`: `scripts/lib/index-data.mjs` reads Class A straight from the cover of its latest 10-Q or 10-K (`listedFraction` 1). Its `iwf` of 0.81 leaves out the 18.7% of Class A that the IPO prospectus puts with officers and directors; recheck it after SpaceX's first proxy statement. TSLAc uses BLUE's values; keep the two in step.
+
+One command does steps 1 to 4 of section 8 (basket, deploy, seed, checks). It reuses BLUE's CHIP pool, keeper and updater, asks the keystore password once and asks you to type `yes` before anything is sent. Run it while the feeds are fresh (US session), so the basket is priced right:
+
+```bash
+FUND=bluex SEC_USER_AGENT="Your Name you@example.com" ETHERSCAN_API_KEY=<key> scripts/deploy-fund.sh
+```
+
+If the signer is short of SPCXc or TSLAc for the seed, it prints what to buy (with Bankr links) and stops; buy them and run it again. It picks up where it left off. Then commit `contracts/deployments/8453-bluex.json` and `contracts/basket/bluex.json`, run `npm run deploy:site`, and set `FUNDS` to `blue blueai bluex`.
+
 ## Testnet (Base Sepolia)
 
 The real stock tokens don't exist on Sepolia, so it runs on mocks. The quickest check is the live test, which deploys a fresh set and runs mint, redeem, a CHIP buy-and-burn, the index timelock and a rebalancing trade (the trade needs Mon–Fri 14:30–20:00 UTC):

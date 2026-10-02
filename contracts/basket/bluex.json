@@ -1,0 +1,83 @@
+{
+  "name": "Bluechip X",
+  "tokenName": "Bluechip X",
+  "tokenSymbol": "BLUEX",
+  "targetUsdPerShare": 100,
+  "generatedAt": "2026-10-02T11:43:57.546Z",
+  "totalFloatCapUsd": 1999745711700,
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "symbols": [
+    "SPCXc",
+    "TSLAc"
+  ],
+  "addresses": [
+    "0xb2000000000000000000007b9fcbd005511aCBd5",
+    "0xb2000000000000000000001e800a7f5189430cD0"
+  ],
+  "feeds": [
+    "0x6A634B235903C4ad6376892180d6fF8612e3Fa68",
+    "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4"
+  ],
+  "pools": [
+    "0x0bf58fe0FAc935Ac69595c19B12Ba0d75E3F8c0E",
+    "0x469337fDcc5E8f38e2E4B670B04F57865D13a7BB"
+  ],
+  "decimals": [
+    8,
+    8
+  ],
+  "floatShares": [
+    6233997872,
+    3001656019
+  ],
+  "multipliers": [
+    "1000000000000000000",
+    "1000000000000000000"
+  ],
+  "prices": [
+    "14904000000",
+    "35668000000"
+  ],
+  "units": [
+    "31173953",
+    "15010189"
+  ],
+  "tokens": [
+    {
+      "symbol": "SPCXc",
+      "address": "0xb2000000000000000000007b9fcbd005511aCBd5",
+      "feed": "0x6A634B235903C4ad6376892180d6fF8612e3Fa68",
+      "pool": "0x0bf58fe0FAc935Ac69595c19B12Ba0d75E3F8c0E",
+      "decimals": 8,
+      "sharesOutstanding": 7696293669,
+      "sharesSource": "CommonClassA on the cover as of 2026-07-28 (10-Q filed 2026-08-04)",
+      "listedFraction": 1,
+      "iwf": 0.81,
+      "floatShares": 6233997872,
+      "priceAnswer": "14904000000",
+      "price": 149.04,
+      "multiplier": 1,
+      "multiplierWad": "1000000000000000000",
+      "weight": 0.464617,
+      "units": "31173953"
+    },
+    {
+      "symbol": "TSLAc",
+      "address": "0xb2000000000000000000001e800a7f5189430cD0",
+      "feed": "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
+      "pool": "0x469337fDcc5E8f38e2E4B670B04F57865D13a7BB",
+      "decimals": 8,
+      "sharesOutstanding": 3949547394,
+      "sharesSource": "EntityCommonStockSharesOutstanding as of 2026-07-16 (10-Q filed 2026-07-23)",
+      "listedFraction": 1,
+      "iwf": 0.76,
+      "floatShares": 3001656019,
+      "priceAnswer": "35668000000",
+      "price": 356.68,
+      "multiplier": 1,
+      "multiplierWad": "1000000000000000000",
+      "weight": 0.535383,
+      "units": "15010189"
+    }
+  ]
+}

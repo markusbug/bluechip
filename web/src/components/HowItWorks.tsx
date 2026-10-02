@@ -1,6 +1,6 @@
 import { funds } from "../config";
 
-/** "BLUE" while it's the only fund, "BLUE or BLUEAI" once there are more. */
+/** "BLUE" while it's the only fund, "BLUE, BLUEAI or BLUEX" once there are more. */
 const token = new Intl.ListFormat("en", { type: "disjunction" }).format(funds.map((f) => f.symbol));
 
 const steps = [

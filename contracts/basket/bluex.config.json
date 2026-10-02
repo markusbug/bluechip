@@ -1,0 +1,29 @@
+{
+  "name": "Bluechip X",
+  "tokenName": "Bluechip X",
+  "tokenSymbol": "BLUEX",
+  "targetUsdPerShare": 100,
+  "note": "SpaceX and Tesla. Float-adjusted market-cap weighting, like the S&P 500 (and so Vanguard's VOO). Float shares = sharesOutstanding (fetched live from SEC EDGAR by `cik`) x listedFraction x iwf. listedFraction: the share of the company's stock in listed classes S&P counts. iwf: S&P's investable weight factor, the fraction of listed shares not held by officers, directors and other strategic holders. Both are estimates from proxy statements; check them yearly (after proxy season) or after a large insider change. pool: the stock's USDC pool on Aerodrome Slipstream, used by the rebalancer. TSLAc: the same values as BLUE's (contracts/basket/mag7.config.json); keep them in step. SPCXc: SpaceX (IPO June 2026). Only Class A is listed (Class B, 10 votes a share, is nearly all Elon Musk's), and its filings tag the cover-page share count only per class, so `coverClasses` reads Class A from the latest 10-Q or 10-K and listedFraction is 1. iwf 0.81: the June 2026 prospectus puts 18.7% of Class A after the IPO with executive officers and directors (Musk 11.3%, Antonio Gracias/Valor 6.7%). Recheck it after the first proxy statement and as lock-ups end.",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "constituents": [
+    {
+      "symbol": "SPCXc",
+      "address": "0xb2000000000000000000007b9fcbd005511aCBd5",
+      "feed": "0x6A634B235903C4ad6376892180d6fF8612e3Fa68",
+      "pool": "0x0bf58fe0fac935ac69595c19b12ba0d75e3f8c0e",
+      "cik": 1181412,
+      "coverClasses": ["CommonClassA"],
+      "listedFraction": 1.0,
+      "iwf": 0.81
+    },
+    {
+      "symbol": "TSLAc",
+      "address": "0xb2000000000000000000001e800a7f5189430cD0",
+      "feed": "0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4",
+      "pool": "0x469337fdcc5e8f38e2e4b670b04f57865d13a7bb",
+      "cik": 1318605,
+      "listedFraction": 1.0,
+      "iwf": 0.76
+    }
+  ]
+}

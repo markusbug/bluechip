@@ -11,7 +11,7 @@
 # while it is empty:
 #   KEEPER_CHAINS  e.g. "8453" (Base mainnet); "84532" (Base Sepolia) needs BASE_SEPOLIA_RPC_URL
 #   INDEX_CHAINS   e.g. "8453"
-# and for each fund in FUNDS (default "blue"; with BLUEAI live, "blue blueai"). A (chain, fund) pair
+# and for each fund in FUNDS (default "blue"; with every fund live, "blue blueai bluex"). A (chain, fund) pair
 # without a committed deployment file (contracts/deployments/<chainId>.json for blue,
 # <chainId>-<fund>.json otherwise) is skipped. Every fund uses the same keeper and updater wallets.
 #

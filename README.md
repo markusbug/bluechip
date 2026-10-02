@@ -7,7 +7,8 @@ Base is blue. The stocks are blue chips. The tokens:
 | Token | Ticker | What it is |
 |---|---|---|
 | Bluechip Index | `$BLUE` | The fund share. An ERC-20 backed in kind by the seven largest US tech stocks (NVDA, AAPL, GOOGL, MSFT, AMZN, META, TSLA), weighted by float-adjusted market cap like the S&P 500 and kept on that index automatically. Mint by depositing the basket, redeem to get it back. |
-| Bluechip AI | `$BLUEAI` | A second fund on the same contracts: the AI build-out (NVDA, MSFT, GOOGL, AMZN, META, SNDK), weighted and kept on its index the same way. Ready to deploy; see [Launch](#launch). |
+| Bluechip AI | `$BLUEAI` | A second fund on the same contracts: the AI build-out (NVDA, MSFT, GOOGL, AMZN, META, SNDK), weighted and kept on its index the same way. |
+| Bluechip X | `$BLUEX` | A third: SpaceX and Tesla (SPCX, TSLA), weighted and kept on its index the same way. Ready to deploy; see [`docs/LAUNCH.md`](docs/LAUNCH.md#9-launch-bluechip-x-bluex). |
 | Chip | `$CHIP` | The project token, launched on [Bankr](https://bankr.bot). Every mint of either fund pays 0.30% in fund shares to that fund's CHIP burner, which uses it to buy CHIP and burn it. |
 
 Put the two together and you get **BLUE + CHIP**.
@@ -71,6 +72,7 @@ contracts/                Foundry
   basket/mag7.config.json   BLUE: tickers, addresses, feeds, pools, CIKs, IWFs  (edit this)
   basket/mag7.json          BLUE: generated seed vector                          (npm run basket)
   basket/blueai.config.json, blueai.json   the same for BLUEAI                 (npm run basket -- --fund blueai)
+  basket/bluex.config.json, bluex.json     the same for BLUEX                  (npm run basket -- --fund bluex)
   deployments/<chainId>.json  BLUE's contracts, written by the deploy scripts, imported by the site
   deployments/<chainId>-<fund>.json  every other fund's
 scripts/basket.mjs        EDGAR shares + live Chainlink prices -> seed units and initial index

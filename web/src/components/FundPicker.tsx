@@ -25,11 +25,11 @@ export function FundPicker({ funds, selected, onSelect }: { funds: FundState[]; 
     <section id="funds" className="scroll-mt-24 py-12">
       <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">Choose your fund</h2>
       <p className="mt-3 max-w-2xl text-muted">
-        Each fund is its own token with its own basket. Both are weighted the same way and minted, redeemed and rebalanced by the same
-        contracts. Pick one to see what it holds and to mint or redeem it.
+        Each fund is its own token with its own basket. {funds.length === 2 ? "Both are" : "All are"} weighted the same way and minted,
+        redeemed and rebalanced by the same contracts. Pick one to see what it holds and to mint or redeem it.
       </p>
 
-      <div role="radiogroup" aria-label="Fund" className="mt-8 grid gap-4 md:grid-cols-2">
+      <div role="radiogroup" aria-label="Fund" className={`mt-8 grid gap-4 md:grid-cols-2 ${funds.length > 2 ? "xl:grid-cols-3" : ""}`}>
         {funds.map((f) => {
           const on = f.config.id === selected;
           const top = [...f.constituents].sort((a, b) => b.weight - a.weight);
